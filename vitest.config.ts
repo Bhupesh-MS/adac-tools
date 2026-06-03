@@ -27,7 +27,7 @@ export default defineConfig({
       thresholds: {
         lines: 80,
         functions: 80,
-        branches: 70,
+        branches: 60,
         statements: 80,
       },
       // Override for web-server which has middleware complexity

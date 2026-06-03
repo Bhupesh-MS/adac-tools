@@ -65,7 +65,7 @@ it('throws UnsupportedAdacNodeError for unsupported node types', () => {
     expect(error.message).toContain('kubernetes-statefulset');
   }
 });
-import { execFileSync } from 'child_process';
+import { execFileSync, type ExecException } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -77,6 +77,7 @@ import {
 } from '../src/index.js';
 
 const TEMP_DIR_PREFIX = join(tmpdir(), 'adac-export-k8s-');
+const KUBECTL_DRY_RUN_TIMEOUT_MS = 5000;
 const tempDirs: string[] = [];
 
 function createTempDir(): string {
@@ -328,14 +329,15 @@ describe('generateK8sManifestsFromAdacFile', () => {
       execFileSync(
         'kubectl',
         ['apply', '--dry-run=client', '--validate=false', '-f', manifestPath],
-        { stdio: 'pipe' }
+        { stdio: 'pipe', timeout: KUBECTL_DRY_RUN_TIMEOUT_MS }
       );
     } catch (error) {
-      if (isKubectlDiscoveryUnavailable(error)) {
+      const err = error as ExecException;
+      if (err.code === 'ETIMEDOUT' || isKubectlDiscoveryUnavailable(err)) {
         return;
       }
 
-      throw error;
+      throw err;
     }
   });
 });

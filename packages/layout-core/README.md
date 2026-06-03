@@ -76,6 +76,21 @@ interface LayoutResult {
 }
 ```
 
+## Performance Tuning
+
+The default custom layout settings favor readable spacing and crossing
+reduction. For large or latency-sensitive graphs, lower the spacing and
+iteration options when constructing the layout engine:
+
+```typescript
+const engine = new CustomLayoutEngine({
+  nodesep: 80,
+  ranksep: 100,
+  maxIterations: 24,
+  edgeRoutingMaxAttempts: 10,
+});
+```
+
 ## See Also
 
 - [@mindfiredigital/adac-layout](../layout) - Layout orchestration

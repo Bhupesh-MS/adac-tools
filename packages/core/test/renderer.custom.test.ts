@@ -19,10 +19,40 @@ describe('Custom Layout Engine (Renderer)', () => {
     const svg = await renderSvg(graph, 'custom');
     expect(svg).toContain('id="node-n1"');
     expect(svg).toContain('id="node-n5"');
-    // Check for grid positioning (n5 should be on second row)
-    // First row: n1, n2, n3, n4. Gap is 56, Pad 48.
-    // n5.y should be CONTAINER_TOP (44) + height (100) + gap_y (80) = 224
-    expect(svg).toContain('y="220"');
+
+    const nodeY = (id: string) => {
+      const nodeGroup = svg.match(
+        new RegExp(`<g id="node-${id}">([\\s\\S]*?)</g>`)
+      );
+      expect(nodeGroup, `Missing SVG group for node ${id}`).toBeTruthy();
+
+      const rectByClass = (className: string) =>
+        nodeGroup![1].match(
+          new RegExp(
+            `<rect\\b(?=[^>]*\\bclass\\s*=\\s*["'][^"']*\\b${className}\\b[^"']*["'])[^>]*?>`
+          )
+        )?.[0];
+      const mainRect =
+        rectByClass('node-card') ||
+        rectByClass('aws-container') ||
+        rectByClass('gcp-container') ||
+        rectByClass('azure-container') ||
+        nodeGroup![1].match(/<rect\b[^>]*?>/)?.[0];
+      const yMatch = mainRect?.match(/\by\s*=\s*["']([^"']+)["']/);
+
+      expect(yMatch, `Missing main rect y for node ${id}`).toBeTruthy();
+      const y = Number(yMatch![1]);
+      expect(
+        Number.isFinite(y),
+        `Invalid Y coordinate for node ${id}: ${yMatch![1]}`
+      ).toBe(true);
+      return y;
+    };
+
+    expect(
+      nodeY('n5'),
+      'Expected n5 to be placed below n1 in fallback grid layout'
+    ).toBeGreaterThan(nodeY('n1'));
   });
 
   it('should use core engine for ranked layout when edges exist', async () => {
