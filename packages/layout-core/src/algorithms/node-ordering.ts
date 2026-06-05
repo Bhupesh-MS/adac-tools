@@ -118,6 +118,11 @@ function medianSweep(
 /**
  * Transpose: iteratively swap adjacent nodes if doing so reduces crossings.
  * This is a local search that catches improvements the sweep misses.
+ *
+ * Complexity Trade-off:
+ * The worst-case complexity per pass is O(r * n * E log E), as it re-counts
+ * crossings for every adjacent pair swap attempt across r ranks and n nodes.
+ * For very large graphs, consider tuning down `maxIterations`.
  */
 function transpose(
   graph: Graph,

@@ -945,7 +945,11 @@ export function buildElkGraph(
     (cloud.services || []).forEach((service: AdacService) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cfg = (service.config || service.configuration || {}) as any;
-      if (getServiceType(service) === 'subnet' && (cfg.vpc || cfg.vnet)) {
+      const svcType = getServiceType(service);
+      if (
+        (svcType === 'subnet' || svcType === 'subnetwork') &&
+        (cfg.vpc || cfg.vnet)
+      ) {
         subnetToVpcMap.set(service.id, cfg.vpc || cfg.vnet);
       }
     });
@@ -1187,8 +1191,13 @@ export function buildElkGraph(
         // Else, place in Utility Group if it looks like a backend service
         // If it's a major container like VPC, it goes to root (already handled?)
         // VPCs are containers, usually not placed inside others.
-        if (type === 'vpc' || type === 'virtual-network') {
-          // VPCs and VNets go to root
+        if (
+          type === 'vpc' ||
+          type === 'virtual-network' ||
+          type === 'resource-group' ||
+          type === 'vnet'
+        ) {
+          // VPCs, VNets, and Resource Groups go to root
           const vpcNode = nodesMap.get(service.id)!;
           if (!rootChildren.includes(vpcNode)) rootChildren.push(vpcNode);
           placedNodeIds.add(service.id);

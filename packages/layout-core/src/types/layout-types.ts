@@ -10,7 +10,7 @@ export interface LayoutOptions {
   /** Maximum channel-search attempts for edge collision avoidance. Defaults to 20. */
   edgeRoutingMaxAttempts?: number;
   /** Optional diagnostics sink for layout warnings. */
-  logger?: { warn(message: string): void } | undefined;
+  logger?: { warn(message: string): void };
   /** Maximum crossing-reduction sweeps. Defaults to 48 in CustomLayoutEngine. */
   maxIterations?: number;
   nodePlacementStrategy?: string;

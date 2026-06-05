@@ -814,12 +814,10 @@ export async function renderSvg(
           y: p.y,
         }));
       } catch (err) {
-        if (process.env.DEBUG) {
-          console.warn(
-            `[ADAC Routing] A* routing failed for edge ${origEdge.id}:`,
-            err
-          );
-        }
+        console.warn(
+          `[ADAC Routing] A* routing failed for edge ${origEdge.id}:`,
+          err
+        );
         const midY = (startStub.y + endStub.y) / 2;
         mappedBends = [
           { x: startStub.x, y: midY },
