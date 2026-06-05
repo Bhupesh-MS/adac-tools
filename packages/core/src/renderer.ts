@@ -385,6 +385,31 @@ const hasCssClassToken = (node: ElkNode, tokens: Set<string>) => {
   if (typeof cssClass !== 'string') return false;
   return cssClass.split(/\s+/).some((token) => tokens.has(token));
 };
+function calculateLabelDimensions(
+  label: string | undefined,
+  availableWidth: number
+) {
+  const safeLabel = label || '';
+  const PILL_LABEL_CHAR_WIDTH = 7.5;
+  const PILL_LABEL_PADDING = 40;
+
+  const maxLabelW = Math.min(
+    availableWidth - 56,
+    safeLabel.length * PILL_LABEL_CHAR_WIDTH + PILL_LABEL_PADDING
+  );
+  const maxChars = Math.floor(
+    (maxLabelW - PILL_LABEL_PADDING) / PILL_LABEL_CHAR_WIDTH
+  );
+  const displayLabel =
+    safeLabel.length > maxChars + 2
+      ? safeLabel.substring(0, maxChars).trim() + '…'
+      : safeLabel;
+
+  const actualLabelW =
+    displayLabel.length * PILL_LABEL_CHAR_WIDTH + PILL_LABEL_PADDING;
+
+  return { displayLabel, actualLabelW };
+}
 
 export async function renderSvg(
   graph: ElkNode,
@@ -664,23 +689,8 @@ export async function renderSvg(
       return sign * mag;
     };
 
-    const PILL_LABEL_CHAR_WIDTH = 7.5;
-    const PILL_LABEL_PADDING = 40;
-
     const getPillBounds = (pos: { x: number; w: number; label?: string }) => {
-      const maxLabelW = Math.min(
-        pos.w - 56,
-        (pos.label || '').length * PILL_LABEL_CHAR_WIDTH + PILL_LABEL_PADDING
-      );
-      const maxChars = Math.floor(
-        (maxLabelW - PILL_LABEL_PADDING) / PILL_LABEL_CHAR_WIDTH
-      );
-      const displayLabel =
-        (pos.label || '').length > maxChars + 2
-          ? (pos.label || '').substring(0, maxChars).trim() + '…'
-          : pos.label || '';
-      const actualLabelW =
-        displayLabel.length * PILL_LABEL_CHAR_WIDTH + PILL_LABEL_PADDING;
+      const { actualLabelW } = calculateLabelDimensions(pos.label, pos.w);
       return { left: pos.x + 16, right: pos.x + 16 + actualLabelW };
     };
 
@@ -803,7 +813,13 @@ export async function renderSvg(
           x: p.x,
           y: p.y,
         }));
-      } catch {
+      } catch (err) {
+        if (process.env.DEBUG) {
+          console.warn(
+            `[ADAC Routing] A* routing failed for edge ${origEdge.id}:`,
+            err
+          );
+        }
         const midY = (startStub.y + endStub.y) / 2;
         mappedBends = [
           { x: startStub.x, y: midY },
@@ -1024,6 +1040,35 @@ export async function renderSvg(
   let edgePathsOutput = '';
   let edgeLabelsOutput = '';
 
+  // Precompute all edge segment bounding boxes for fast collision detection
+  const edgeSegmentsCache: {
+    edgeId: string;
+    sLeft: number;
+    sRight: number;
+    sTop: number;
+    sBottom: number;
+  }[] = [];
+  allEdges.forEach((otherEdge) => {
+    (otherEdge.sections || []).forEach((otherSec) => {
+      const otherPts = [
+        otherSec.startPoint,
+        ...(otherSec.bendPoints || []),
+        otherSec.endPoint,
+      ];
+      for (let j = 0; j < otherPts.length - 1; j++) {
+        const p1 = otherPts[j];
+        const p2 = otherPts[j + 1];
+        edgeSegmentsCache.push({
+          edgeId: otherEdge.id,
+          sLeft: Math.min(p1.x, p2.x),
+          sRight: Math.max(p1.x, p2.x),
+          sTop: Math.min(p1.y, p2.y),
+          sBottom: Math.max(p1.y, p2.y),
+        });
+      }
+    });
+  });
+
   allEdges.forEach((e) => {
     (e.sections || []).forEach((s) => {
       const pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
@@ -1198,33 +1243,14 @@ export async function renderSvg(
             );
           });
 
-          const overlapsOtherEdge = allEdges.some((otherEdge) => {
-            if (otherEdge.id === e.id) return false;
-            return (otherEdge.sections || []).some((otherSec) => {
-              const otherPts = [
-                otherSec.startPoint,
-                ...(otherSec.bendPoints || []),
-                otherSec.endPoint,
-              ];
-              for (let j = 0; j < otherPts.length - 1; j++) {
-                const p1 = otherPts[j];
-                const p2 = otherPts[j + 1];
-                const sLeft = Math.min(p1.x, p2.x);
-                const sRight = Math.max(p1.x, p2.x);
-                const sTop = Math.min(p1.y, p2.y);
-                const sBottom = Math.max(p1.y, p2.y);
-
-                if (
-                  tLeft <= sRight &&
-                  tRight >= sLeft &&
-                  tTop <= sBottom &&
-                  tBottom >= sTop
-                ) {
-                  return true;
-                }
-              }
-              return false;
-            });
+          const overlapsOtherEdge = edgeSegmentsCache.some((seg) => {
+            if (seg.edgeId === e.id) return false;
+            return (
+              tLeft <= seg.sRight &&
+              tRight >= seg.sLeft &&
+              tTop <= seg.sBottom &&
+              tBottom >= seg.sTop
+            );
           });
 
           if (!overlapsLabel && !overlapsNode && !overlapsOtherEdge) {
@@ -1356,17 +1382,11 @@ export async function renderSvg(
       // 2. Label pill — standalone overlapping pill at the top-left
       const pillH = 28;
       const pillR = 14;
-      const charW = 7.5;
-      const padding = 40;
 
-      const maxLabelW = Math.min(nw - 56, label.length * charW + padding);
-      const maxChars = Math.floor((maxLabelW - padding) / charW);
-      const displayLabel =
-        label.length > maxChars + 2
-          ? label.substring(0, maxChars).trim() + '…'
-          : label;
-
-      const actualLabelW = displayLabel.length * charW + padding;
+      const { displayLabel, actualLabelW } = calculateLabelDimensions(
+        label,
+        nw
+      );
 
       output += `<rect x="${absX + 16}" y="${absY - pillR}"
         width="${actualLabelW}" height="${pillH}"

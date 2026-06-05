@@ -59,17 +59,38 @@ describe('Custom Layout Engine (Renderer)', () => {
     const graph: ElkNode = {
       id: 'root',
       children: [
-        { id: 'n1', width: 100, height: 100, properties: { type: 'service' } },
-        { id: 'n2', width: 100, height: 100, properties: { type: 'service' } },
+        {
+          id: 'n1',
+          width: 100,
+          height: 100,
+          properties: { type: 'service', isStacked: true, cost: 45.5 },
+        },
+        {
+          id: 'n2',
+          width: 100,
+          height: 100,
+          properties: { type: 'service', isStacked: false, cost: 0 },
+        },
       ],
       edges: [{ id: 'e1', sources: ['n1'], targets: ['n2'] }],
     };
 
-    const svg = await renderSvg(graph, 'custom');
+    const costData = { n1: 45.5, n2: 0 };
+    const svg = await renderSvg(
+      graph,
+      'custom',
+      undefined,
+      undefined,
+      costData
+    );
     expect(svg).toContain('class="aws-edge"');
     // Check that nodes are placed (coordinates depend on core engine, but should exist)
     expect(svg).toContain('id="node-n1"');
     expect(svg).toContain('id="node-n2"');
+    // Check stacked and cost logic
+    expect(svg).toContain('rx="10" ry="10" fill-opacity="0.4"');
+    expect(svg).toContain('$45.50');
+    expect(svg).toContain('$0.00');
   });
 
   it('should handle recursive container layouts', async () => {

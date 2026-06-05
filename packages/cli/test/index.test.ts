@@ -3,8 +3,8 @@ import { runCLI } from '../src/index.js';
 import type { CostBreakdown } from '../src/index.js';
 
 vi.mock('child_process', () => ({
-  exec: vi.fn((cmd, cb) => {
-    if (cb) cb(null, { stdout: '', stderr: '' });
+  exec: vi.fn((_cmd, cb) => {
+    if (cb) cb(null, '', '');
   }),
 }));
 

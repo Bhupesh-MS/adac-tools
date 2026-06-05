@@ -89,7 +89,8 @@ export function routeEdges(
   });
 
   outEdges.forEach((list, nodeId) => {
-    const node = graph.getNode(nodeId)!;
+    const node = graph.getNode(nodeId);
+    if (!node) return;
     list.sort((a, b) => a.targetCoord - b.targetCoord);
     const faceLength = isHorizontal ? node.height : node.width;
     const padding = Math.min(faceLength * 0.15, 12);
@@ -104,7 +105,8 @@ export function routeEdges(
   });
 
   inEdges.forEach((list, nodeId) => {
-    const node = graph.getNode(nodeId)!;
+    const node = graph.getNode(nodeId);
+    if (!node) return;
     list.sort((a, b) => a.sourceCoord - b.sourceCoord);
     const faceLength = isHorizontal ? node.height : node.width;
     const padding = Math.min(faceLength * 0.15, 12);
@@ -246,9 +248,10 @@ export function routeEdges(
     skipIds: Set<string>,
     edgeIndex: number
   ): { x: number; y: number }[] {
-    const src = graph.getNode(srcId)!;
-    const tgt = graph.getNode(tgtId)!;
+    const src = graph.getNode(srcId);
+    const tgt = graph.getNode(tgtId);
     const points: { x: number; y: number }[] = [];
+    if (!src || !tgt) return points;
 
     if (isHorizontal) {
       const isReversed = src.rank > tgt.rank;
@@ -330,15 +333,17 @@ export function routeEdges(
     edgeIndex: number
   ): { x: number; y: number }[] {
     const points: { x: number; y: number }[] = [];
-    const srcNode = graph.getNode(path[0])!;
-    const tgtNode = graph.getNode(path[path.length - 1])!;
+    const srcNode = graph.getNode(path[0]);
+    const tgtNode = graph.getNode(path[path.length - 1]);
+    if (!srcNode || !tgtNode) return points;
     const isReversed = srcNode.rank > tgtNode.rank;
     const srcPort = allocateOutPort(edgeIndex);
     const tgtPort = allocateInPort(edgeIndex);
 
     for (let i = 0; i < path.length; i++) {
       const nodeId = path[i];
-      const node = graph.getNode(nodeId)!;
+      const node = graph.getNode(nodeId);
+      if (!node) continue;
 
       if (i === 0) {
         // Start at source exit face
@@ -537,18 +542,6 @@ function avoidCollisionsOnPath(
     m: number
   ) => number
 ): { x: number; y: number }[] {
-  if (points.length < 2) return points;
-
-  let current = dedupePoints(points);
-
-  for (let pass = 0; pass < COLLISION_REROUTE_PASSES; pass++) {
-    const { points: next, changed } = avoidCollisionsOnce(current);
-    current = dedupePoints(next);
-    if (!changed) break;
-  }
-
-  return current;
-
   function avoidCollisionsOnce(path: { x: number; y: number }[]): {
     points: { x: number; y: number }[];
     changed: boolean;
@@ -611,4 +604,16 @@ function avoidCollisionsOnPath(
 
     return deduped;
   }
+
+  if (points.length < 2) return points;
+
+  let current = dedupePoints(points);
+
+  for (let pass = 0; pass < COLLISION_REROUTE_PASSES; pass++) {
+    const { points: next, changed } = avoidCollisionsOnce(current);
+    current = dedupePoints(next);
+    if (!changed) break;
+  }
+
+  return current;
 }

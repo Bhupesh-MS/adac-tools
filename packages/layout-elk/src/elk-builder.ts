@@ -996,16 +996,12 @@ export function buildElkGraph(
         } else if (cfg.vpc) {
           parentId = cfg.vpc;
         }
-
-        if (cfg.subnets && cfg.subnets.length > 0) {
-          if (cfg.subnets.length === 1) parentId = cfg.subnets[0];
-        }
       }
 
       // Unified subnets resolution
       const subnets =
         service.subnets || cfg?.subnets || (cfg?.subnet ? [cfg.subnet] : []);
-      if (!parentId && subnets.length > 0) {
+      if (subnets.length > 0) {
         if (subnets.length === 1) {
           parentId = subnets[0];
         } else {

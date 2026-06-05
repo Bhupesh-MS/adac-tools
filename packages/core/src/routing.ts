@@ -329,6 +329,8 @@ export function routeAStar(
   const endSnapped = { x: xCoords[endXIdx], y: yCoords[endYIdx] };
   const path: Point[] = [];
 
+  // Note: start.x is always in xSet, so startSnapped.x === start.x.
+  // This guarantees this intermediate point won't create a diagonal line.
   if (start.x !== startSnapped.x || start.y !== startSnapped.y) {
     path.push(start);
     path.push({ x: start.x, y: startSnapped.y });
@@ -358,6 +360,8 @@ export function routeAStar(
     path.push(revPath[i]);
   }
 
+  // Note: end.x is always in xSet, so endSnapped.x === end.x.
+  // This guarantees this intermediate point won't create a diagonal line.
   if (end.x !== endSnapped.x || end.y !== endSnapped.y) {
     path.push({ x: end.x, y: endSnapped.y });
     path.push(end);
