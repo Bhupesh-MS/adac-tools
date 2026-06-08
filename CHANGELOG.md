@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - License changed from ISC to MIT for all packages
 - Improved package.json structure across all 23 packages
 - Enhanced commit message validation with package scopes
+- Azure layout containers now emit renamed CSS classes together with legacy aliases; consumers should migrate to `azure-vnet`, `azure-subscription`, and `azure-subnet`.
 
 ### Fixed
 

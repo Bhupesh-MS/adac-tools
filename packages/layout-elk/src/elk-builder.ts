@@ -120,8 +120,20 @@ const CONTAINER_LAYOUT_OPTIONS: Record<string, string> = {
 // node when its label is wider than the icon, instead of clipping the text.
 const LEAF_NODE_LAYOUT_OPTIONS: Record<string, string> = {
   'elk.nodeSize.constraints': 'NODE_LABELS MINIMUM_SIZE',
-  'elk.portAlignment.default': 'CENTER',
 };
+
+export type ElkEdgeRoutingMode = 'ORTHOGONAL' | 'POLYLINE' | 'SPLINES';
+
+export interface BuildElkGraphOptions {
+  edgeRoutingMode?: ElkEdgeRoutingMode;
+}
+
+const DEFAULT_EDGE_ROUTING_MODE: ElkEdgeRoutingMode = 'ORTHOGONAL';
+
+// Approximate SVG label metrics for the current node font. Wider fonts or
+// localized labels may need larger values, or configurable metrics per theme.
+const NODE_LABEL_CHAR_WIDTH = 6.5;
+const NODE_LABEL_HORIZONTAL_PADDING = 40;
 
 // Service/app types that should be pinned to the FIRST layer so the diagram
 // reads "user → cloud" left-to-right (or top-to-bottom).
@@ -167,6 +179,21 @@ const STORAGE_SERVICE_TYPES = new Set([
   'db',
   'storage',
 ]);
+
+function selectDefaultVpcId(
+  subnetToVpcMap: Map<string, string>
+): string | undefined {
+  if (subnetToVpcMap.size === 0) return undefined;
+
+  const subnetCounts = new Map<string, number>();
+  for (const vpcId of subnetToVpcMap.values()) {
+    subnetCounts.set(vpcId, (subnetCounts.get(vpcId) || 0) + 1);
+  }
+
+  return Array.from(subnetCounts.entries()).sort(
+    ([aId, aCount], [bId, bCount]) => bCount - aCount || aId.localeCompare(bId)
+  )[0]?.[0];
+}
 
 // AWS Colors matching AWS Diagrams
 const STYLES = {
@@ -214,19 +241,23 @@ const GCP_STYLES = {
 
 // Azure Container Styles — uses Microsoft Azure color palette (blue)
 const AZURE_STYLES = {
-  // Azure Resource Group (blue border)
-  vpc: { type: 'container', style: 'azure-rg', cssClass: 'azure-rg' },
-  // Azure Subscription (lighter blue)
+  // Azure VNet / Resource Group
+  vpc: {
+    type: 'container',
+    style: 'azure-vnet',
+    cssClass: 'azure-vnet azure-vpc',
+  },
+  // Azure Subscription
   region: {
     type: 'container',
     style: 'azure-subscription',
-    cssClass: 'azure-subscription',
+    cssClass: 'azure-subscription azure-rg',
   },
-  // Azure container
+  // Azure Subnet
   subnet: {
     type: 'container',
-    style: 'azure-container',
-    cssClass: 'azure-container',
+    style: 'azure-subnet',
+    cssClass: 'azure-subnet azure-container',
   },
   // Azure compute cluster/group
   compute: {
@@ -372,7 +403,10 @@ const GCP_ALIASES: Record<string, string> = {
   storage: 'Cloud Storage',
 };
 
-export function buildElkGraph(adac: AdacConfig): ElkNode {
+export function buildElkGraph(
+  adac: AdacConfig,
+  options: BuildElkGraphOptions = {}
+): ElkNode {
   const nodesMap = new Map<string, ElkNode>();
   const edges: ElkEdge[] = [];
 
@@ -396,17 +430,17 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
     );
   const estimatedEdgeCount = (adac.connections || []).length;
   const isDenseGraph = estimatedNodeCount > 40 || estimatedEdgeCount > 80;
-  const edgeRoutingMode = isDenseGraph ? 'SPLINES' : 'ORTHOGONAL';
+  const edgeRoutingMode = options.edgeRoutingMode ?? DEFAULT_EDGE_ROUTING_MODE;
   const edgeSpacing = isDenseGraph
     ? {
-        nodeNodeBetweenLayers: '140',
-        edgeNodeBetweenLayers: '80',
+        nodeNodeBetweenLayers: '180',
+        edgeNodeBetweenLayers: '100',
         edgeEdgeBetweenLayers: '60',
       }
     : {
-        nodeNodeBetweenLayers: '100',
-        edgeNodeBetweenLayers: '40',
-        edgeEdgeBetweenLayers: '20',
+        nodeNodeBetweenLayers: '140',
+        edgeNodeBetweenLayers: '60',
+        edgeEdgeBetweenLayers: '30',
       };
   const getIconPath = (
     key: string,
@@ -537,6 +571,25 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
   const isAzureCloud = (cloud: AdacCloud) =>
     (cloud.provider || '').toLowerCase() === 'azure';
 
+  const getProviderIconPath = (
+    key: string,
+    isAzureProvider: boolean,
+    isGcpProvider: boolean
+  ) => {
+    if (isAzureProvider) return getAzureIconPath(key);
+    if (isGcpProvider) return getGcpIconPath(key);
+    return getAwsIconPath(key);
+  };
+
+  const isSubnetNode = (node: ElkNode) => {
+    const role = node.properties?.nodeRole;
+    if (role === 'subnet') return true;
+    if (role !== undefined) return false;
+
+    const cssClass = node.properties?.cssClass;
+    return typeof cssClass === 'string' && cssClass.includes('subnet');
+  };
+
   // Select STYLES based on cloud provider
   const getStylesForCloud = (cloud: AdacCloud) => {
     if (isAzureCloud(cloud)) return AZURE_STYLES;
@@ -566,8 +619,34 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
     )
       return getIconPath('Compute');
 
+    // Generic type fallback mapping
+    const type = (app.type || '').toLowerCase();
+    if (type === 'frontend' || type === 'web' || type === 'ui') {
+      return (
+        getIconPath('Front-End Web & Mobile') || getIconPath('Application')
+      );
+    }
+    if (type === 'backend' || type === 'api' || type === 'service') {
+      if (isGcp) return getGcpIconPath('cloud-run');
+      if (isAzure)
+        return getAzureIconPath('app-service') || getIconPath('Compute');
+      return getIconPath('Compute');
+    }
+    if (type === 'worker' || type === 'job' || type === 'task') {
+      if (isGcp) return getGcpIconPath('cloud-functions');
+      if (isAzure)
+        return getAzureIconPath('azure-functions') || getIconPath('Compute');
+      return getIconPath('Compute');
+    }
+    if (type === 'database' || type === 'db') {
+      return getIconPath('database');
+    }
+
     // Fallbacks
-    return getIconPath(app.type) || getIconPath('Application');
+    return (
+      getIconPath(app.type) ||
+      (isGcp ? getGcpIconPath('compute-engine') : getIconPath('Application'))
+    );
   };
 
   // Choose a per-node layer constraint so the diagram reads in flow order:
@@ -595,19 +674,29 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
     return opts;
   };
 
+  const calcNodeWidth = (label: string): number => {
+    return Math.max(
+      80,
+      label.length * NODE_LABEL_CHAR_WIDTH + NODE_LABEL_HORIZONTAL_PADDING
+    );
+  };
+
   // 1. Create Nodes for Applications
   (adac.applications || []).forEach((app: AdacApplication) => {
+    const labelText = app.name || app.id;
+    const dynamicW = calcNodeWidth(labelText);
     const node: ElkNode = {
       id: app.id,
-      width: 80,
+      width: dynamicW,
       height: 100,
-      labels: [{ text: app.name }],
+      labels: [{ text: labelText }],
       properties: {
         type: 'app',
         iconPath: detectIconForApp(app),
         title: app.type,
+        isStacked: app.type === 'cluster',
       },
-      layoutOptions: buildLeafLayoutOptions(app.type || '', 80, 100),
+      layoutOptions: buildLeafLayoutOptions(app.type || '', dynamicW, 100),
     };
     nodesMap.set(app.id, node);
   });
@@ -699,11 +788,16 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
         }
       } else if (isAzureCloud(cloud)) {
         // Azure container detection
-        if (typeKey === 'vpc' || typeKey === 'resource-group') {
+        if (
+          typeKey === 'vpc' ||
+          typeKey === 'resource-group' ||
+          typeKey === 'virtual-network' ||
+          typeKey === 'vnet'
+        ) {
           width = 400;
           height = 400;
           style = cloudStyles.vpc;
-        } else if (typeKey === 'subnet' || typeKey === 'vnet') {
+        } else if (typeKey === 'subnet') {
           width = 250;
           height = 250;
           style = cloudStyles.subnet;
@@ -742,44 +836,77 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
         }
       }
 
-      // Icon Resolution strategy — use GCP map for GCP clouds, AWS map otherwise
-      let iconPath = gcpCloud
-        ? getGcpIconPath(typeKey)
-        : getAwsIconPath(typeKey);
+      // Icon Resolution strategy
+      const isAzureProvider = isAzureCloud(cloud);
+      let iconPath = getProviderIconPath(typeKey, isAzureProvider, gcpCloud);
+
       if (service.insight_tags?.icon) {
-        const aiIcon = gcpCloud
-          ? getGcpIconPath(service.insight_tags.icon)
-          : getAwsIconPath(service.insight_tags.icon);
+        const aiIcon = getProviderIconPath(
+          service.insight_tags.icon,
+          isAzureProvider,
+          gcpCloud
+        );
         if (aiIcon) iconPath = aiIcon;
       }
       // Fallback: try generic icon
       if (!iconPath) {
-        iconPath = gcpCloud
-          ? getGcpIconPath('compute-engine')
-          : getAwsIconPath('General resource icon');
+        const fallbackIconKey = isAzureProvider
+          ? 'compute'
+          : gcpCloud
+            ? 'compute-engine'
+            : 'General resource icon';
+        iconPath = getProviderIconPath(
+          fallbackIconKey,
+          isAzureProvider,
+          gcpCloud
+        );
       }
 
       const isContainer = style.type === 'container';
-      const layoutOptions: Record<string, string> = isContainer
-        ? {
-            ...CONTAINER_LAYOUT_OPTIONS,
-            'elk.nodeSize.minimum': `(${width}, ${height})`,
-          }
-        : buildLeafLayoutOptions(typeKey, width, height);
+      const isStackedSvc =
+        (service.runs && service.runs.length > 1) ||
+        (cfg && cfg.instances > 1) ||
+        [
+          'eks',
+          'ecs',
+          'aks',
+          'azure-kubernetes-service',
+          'rds',
+          'aurora',
+          'dynamodb',
+          'msk',
+          'kafka',
+          'elasticache',
+          'redis',
+        ].includes(typeKey);
+
+      const svcLabel = service.name || service.id;
+      const dynamicW = isContainer ? width : calcNodeWidth(svcLabel);
+      const dynamicH = isContainer ? height : 100;
 
       const node: ElkNode = {
         id: service.id,
-        width,
-        height,
-        labels: [{ text: service.name || service.id }],
+        width: dynamicW,
+        height: dynamicH,
+        labels: [{ text: svcLabel }],
         children: [],
         properties: {
           type: style.type,
           cssClass: style.cssClass,
+          nodeRole:
+            typeKey === 'subnet' || typeKey === 'subnetwork'
+              ? 'subnet'
+              : undefined,
           iconPath: iconPath,
           description: service.description || typeKey,
+          isStacked: Boolean(isStackedSvc),
         },
-        layoutOptions,
+        layoutOptions: isContainer
+          ? {
+              ...CONTAINER_LAYOUT_OPTIONS,
+              'elk.nodeSize.minimum': `(${width}, ${height})`,
+            }
+          : buildLeafLayoutOptions(typeKey, dynamicW, dynamicH),
       };
       nodesMap.set(service.id, node);
     });
@@ -811,6 +938,23 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
   // pass here, so a service's `runs:` claim always wins over `insight_tags.group`.
 
   // Process Services to assign Logic Parents
+  const subnetToVpcMap = new Map<string, string>();
+
+  // First pass: Build subnet to VPC mapping
+  (adac.infrastructure?.clouds || []).forEach((cloud: AdacCloud) => {
+    (cloud.services || []).forEach((service: AdacService) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cfg = (service.config || service.configuration || {}) as any;
+      const svcType = getServiceType(service);
+      if (
+        (svcType === 'subnet' || svcType === 'subnetwork') &&
+        (cfg.vpc || cfg.vnet)
+      ) {
+        subnetToVpcMap.set(service.id, cfg.vpc || cfg.vnet);
+      }
+    });
+  });
+
   (adac.infrastructure?.clouds || []).forEach((cloud: AdacCloud) => {
     (cloud.services || []).forEach((service: AdacService) => {
       const node = nodesMap.get(service.id)!;
@@ -856,17 +1000,41 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
         } else if (cfg.vpc) {
           parentId = cfg.vpc;
         }
+      }
 
-        if (cfg.subnets && cfg.subnets.length > 0) {
-          if (cfg.subnets.length === 1) parentId = cfg.subnets[0];
+      // Unified subnets resolution
+      const subnets =
+        service.subnets || cfg?.subnets || (cfg?.subnet ? [cfg.subnet] : []);
+      if (subnets.length > 0) {
+        if (subnets.length === 1) {
+          parentId = subnets[0];
+        } else {
+          const subnetVpcIds = new Map<string, string>();
+          subnets.forEach((subnetId: string) => {
+            const vpcId = subnetToVpcMap.get(subnetId);
+            if (vpcId) subnetVpcIds.set(subnetId, vpcId);
+          });
+
+          const uniqueVpcIds = new Set(subnetVpcIds.values());
+          if (uniqueVpcIds.size === 1) {
+            parentId = Array.from(uniqueVpcIds)[0];
+          } else if (uniqueVpcIds.size > 1) {
+            console.warn(
+              `Service ${service.id} references subnets across multiple VPCs: ${Array.from(
+                subnetVpcIds.entries()
+              )
+                .map(([subnetId, vpcId]) => `${subnetId}->${vpcId}`)
+                .join(', ')}`
+            );
+          }
         }
       }
 
       // Fallback parent logic
       if (!parentId) {
-        if (service.subnets && service.subnets.length === 1)
-          parentId = service.subnets[0];
-        else if (cfg?.vpc) parentId = cfg.vpc;
+        if (cfg?.vpc || cfg?.vnet) {
+          parentId = cfg.vpc || cfg.vnet;
+        }
       }
 
       // Prevent Self-Cycle
@@ -951,12 +1119,85 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
         )
           return;
 
+        const type = getServiceType(service);
+
+        // Assign compute/DB orphans to the VPC with most subnets.
+        const defaultVpcId = selectDefaultVpcId(subnetToVpcMap);
+
+        const isVpcBound = [
+          'eks',
+          'ecs',
+          'ec2',
+          'rds',
+          'aurora',
+          'dynamodb',
+          'msk',
+          'kafka',
+          'elasticache',
+          'redis',
+          'memcached',
+          'nlb',
+          'alb',
+          'docdb',
+          'redshift',
+          'emr',
+          'sagemaker',
+          'opensearch',
+          'aks',
+          'virtual-machine',
+          'azure-kubernetes-service',
+          'app-service',
+          'azure-functions',
+          'azure-sql-database',
+          'cosmos-db',
+          'azure-cache-for-redis',
+          'azure-database-for-postgresql',
+          'azure-api-management',
+          'azure-service-bus',
+          'azure-event-hubs',
+        ].includes(type);
+
+        if (isVpcBound && defaultVpcId) {
+          const vpcNode = nodesMap.get(defaultVpcId);
+          if (vpcNode) {
+            // Find all subnets inside this VPC
+            const subnets: ElkNode[] = [];
+            const findSubnets = (node: ElkNode) => {
+              if (isSubnetNode(node)) {
+                subnets.push(node);
+              }
+              node.children?.forEach(findSubnets);
+            };
+            findSubnets(vpcNode);
+
+            if (subnets.length > 0) {
+              // Balance across subnets by picking the one with the fewest children
+              subnets.sort(
+                (a, b) => (a.children?.length || 0) - (b.children?.length || 0)
+              );
+              const targetSubnet = subnets[0];
+              if (!targetSubnet.children) targetSubnet.children = [];
+              targetSubnet.children.push(nodesMap.get(service.id)!);
+            } else {
+              // Fallback to VPC root if no subnets exist
+              if (!vpcNode.children) vpcNode.children = [];
+              vpcNode.children.push(nodesMap.get(service.id)!);
+            }
+            placedNodeIds.add(service.id);
+            return;
+          }
+        }
+
         // Else, place in Utility Group if it looks like a backend service
         // If it's a major container like VPC, it goes to root (already handled?)
         // VPCs are containers, usually not placed inside others.
-        const type = getServiceType(service);
-        if (type === 'vpc') {
-          // VPCs go to root
+        if (
+          type === 'vpc' ||
+          type === 'virtual-network' ||
+          type === 'resource-group' ||
+          type === 'vnet'
+        ) {
+          // VPCs, VNets, and Resource Groups go to root
           const vpcNode = nodesMap.get(service.id)!;
           if (!rootChildren.includes(vpcNode)) rootChildren.push(vpcNode);
           placedNodeIds.add(service.id);
@@ -1035,7 +1276,7 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
 
         const implicitLayoutOptions: Record<string, string> = {
           ...LEAF_NODE_LAYOUT_OPTIONS,
-          'elk.nodeSize.minimum': '(80, 80)',
+          'elk.nodeSize.minimum': `(${calcNodeWidth(endpointId)}, 80)`,
         };
         if (isEntry) {
           implicitLayoutOptions['elk.layered.layering.layerConstraint'] =
@@ -1044,7 +1285,7 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
 
         const implicitNode: ElkNode = {
           id: endpointId,
-          width: 80,
+          width: calcNodeWidth(endpointId),
           height: 80,
           labels: [{ text: endpointId }],
           properties: {
@@ -1092,6 +1333,8 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
       'elk.layered.spacing.nodeNodeBetweenLayers':
         edgeSpacing.nodeNodeBetweenLayers,
       'elk.spacing.nodeNode': '80',
+      'elk.spacing.edgeNode': '30',
+      'elk.spacing.edgeEdge': '15',
       'elk.layered.spacing.edgeNodeBetweenLayers':
         edgeSpacing.edgeNodeBetweenLayers,
       'elk.layered.spacing.edgeEdgeBetweenLayers':
@@ -1103,6 +1346,7 @@ export function buildElkGraph(adac: AdacConfig): ElkNode {
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.layering.strategy': 'NETWORK_SIMPLEX',
       'elk.layered.thoroughness': isDenseGraph ? '7' : '10',
+      'elk.layered.compaction.postCompaction.strategy': 'EDGE_LENGTH',
 
       'elk.layered.mergeEdges': isDenseGraph ? 'false' : 'true',
       'elk.layered.unnecessaryBendpoints': 'true',

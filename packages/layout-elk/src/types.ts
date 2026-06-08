@@ -20,8 +20,10 @@ export interface ElkNode extends BaseElkNode {
     iconPath?: string;
     description?: string;
     cssClass?: string;
+    nodeRole?: string;
     title?: string;
     insight_tags?: string[];
+    isStacked?: boolean;
   };
 }
 

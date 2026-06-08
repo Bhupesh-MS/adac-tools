@@ -336,7 +336,7 @@ describe('ELK Builder', () => {
     expect(subnetNode?.properties?.cssClass).toBe('gcp-subnet');
 
     const gkeNode = subnetNode?.children?.find((c) => c.id === 'gke-cluster');
-    expect(gkeNode?.properties?.cssClass).toBe('gcp-compute-cluster');
+    expect(gkeNode?.properties?.cssClass).toContain('gcp-compute-cluster');
 
     // Test GCP region and zone
     const regionConfig: AdacConfig = {
@@ -419,13 +419,17 @@ describe('ELK Builder', () => {
     const graph = buildElkGraph(config);
     expect(graph).toBeDefined();
 
-    const rgNode = graph.children?.find((c) => c.id === 'azure-rg');
-    expect(rgNode?.properties?.cssClass).toBe('azure-rg');
+    const azureRgNode = graph.children?.find((c) => c.id === 'azure-rg');
+    expect(azureRgNode?.properties?.cssClass).toContain('azure-vnet');
 
-    const vnetNode = rgNode?.children?.find((c) => c.id === 'azure-container');
-    expect(vnetNode?.properties?.cssClass).toBe('azure-container');
+    const azureSubnetNode = azureRgNode?.children?.find(
+      (c) => c.id === 'azure-container'
+    );
+    expect(azureSubnetNode?.properties?.cssClass).toContain('azure-subnet');
 
-    const aksNode = vnetNode?.children?.find((c) => c.id === 'azure-aks');
-    expect(aksNode?.properties?.cssClass).toBe('azure-compute-cluster');
+    const aksNode = azureSubnetNode?.children?.find(
+      (c) => c.id === 'azure-aks'
+    );
+    expect(aksNode?.properties?.cssClass).toContain('azure-compute-cluster');
   });
 });

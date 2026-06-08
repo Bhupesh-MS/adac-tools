@@ -3,6 +3,7 @@ import ELK from 'elkjs';
 import { type ElkNode, type ElkEdge } from '@mindfiredigital/adac-layout-elk';
 import { layoutDagre } from '@mindfiredigital/adac-layout-dagre';
 import { createLayoutEngine } from '@mindfiredigital/adac-layout';
+import { routeAStar } from './routing';
 
 const CSS_STYLES = `
   /* ── Design Tokens ──────────────────────────────────── */
@@ -12,11 +13,11 @@ const CSS_STYLES = `
     --canvas-padding:   40px;
 
     /* Typography */
-    --font-aws:         "Amazon Ember", "Inter", "Segoe UI", 
+    --font-aws:         "Amazon Ember", "Inter", "Segoe UI",
                         system-ui, sans-serif;
-    --font-gcp:         "Google Sans", "Product Sans", 
+    --font-gcp:         "Google Sans", "Product Sans",
                         Roboto, system-ui, sans-serif;
-    --font-azure:       "Segoe UI", "Inter", 
+    --font-azure:       "Segoe UI", "Inter",
                         system-ui, sans-serif;
 
     /* Text colors */
@@ -106,6 +107,10 @@ const CSS_STYLES = `
   }
 
   /* ── Canvas roots ── */
+  .title-pill {
+    stroke-dasharray: none !important;
+    stroke-width: 1.5px !important;
+  }
   .aws-root, .gcp-root, .azure-root {
     fill:   var(--canvas-bg);
     stroke: none;
@@ -335,8 +340,8 @@ const CSS_STYLES = `
     font-weight: 500;
     fill:        #475569;
     paint-order: stroke;
-    stroke:      #FFFFFF;
-    stroke-width: 3px;
+    stroke:      #EEF2F7;
+    stroke-width: 4px;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
@@ -357,6 +362,55 @@ function getProvider(node: ElkNode): 'aws' | 'gcp' | 'azure' {
   return 'aws';
 }
 
+const STRUCTURAL_CLASS_TOKENS = new Set([
+  'aws-az',
+  'aws-vpc',
+  'aws-subnet',
+  'aws-subnet-private',
+  'aws-subnet-public',
+  'gcp-region',
+  'gcp-zone',
+  'gcp-vpc',
+  'gcp-subnet',
+  'azure-subscription',
+  'azure-rg',
+  'azure-vnet',
+  'azure-subnet',
+]);
+
+const ZONE_CLASS_TOKENS = new Set(['aws-az', 'gcp-zone']);
+
+const hasCssClassToken = (node: ElkNode, tokens: Set<string>) => {
+  const cssClass = node.properties?.cssClass;
+  if (typeof cssClass !== 'string') return false;
+  return cssClass.split(/\s+/).some((token) => tokens.has(token));
+};
+function calculateLabelDimensions(
+  label: string | undefined,
+  availableWidth: number
+) {
+  const safeLabel = label || '';
+  const PILL_LABEL_CHAR_WIDTH = 7.5;
+  const PILL_LABEL_PADDING = 40;
+
+  const maxLabelW = Math.min(
+    availableWidth - 56,
+    safeLabel.length * PILL_LABEL_CHAR_WIDTH + PILL_LABEL_PADDING
+  );
+  const maxChars = Math.floor(
+    (maxLabelW - PILL_LABEL_PADDING) / PILL_LABEL_CHAR_WIDTH
+  );
+  const displayLabel =
+    safeLabel.length > maxChars + 2
+      ? safeLabel.substring(0, maxChars).trim() + '…'
+      : safeLabel;
+
+  const actualLabelW =
+    displayLabel.length * PILL_LABEL_CHAR_WIDTH + PILL_LABEL_PADDING;
+
+  return { displayLabel, actualLabelW };
+}
+
 export async function renderSvg(
   graph: ElkNode,
   layoutEngine: 'elk' | 'dagre' | 'custom' = 'elk',
@@ -369,6 +423,14 @@ export async function renderSvg(
   period: 'hourly' | 'daily' | 'monthly' | 'yearly' = 'monthly'
 ): Promise<string> {
   let layout: ElkNode;
+  const allNodeBoxes: {
+    id: string;
+    x: number;
+    y: number;
+    right: number;
+    bottom: number;
+    isContainer: boolean;
+  }[] = [];
 
   if (layoutEngine === 'custom') {
     // ── Hierarchical custom layout ──────────────────────────────
@@ -379,9 +441,8 @@ export async function renderSvg(
 
     const CONTAINER_PAD = 48; // padding inside container boundaries
     const CONTAINER_TOP = 44; // extra top padding for label strip
-    const MAX_COLS = 4; // max children per row before wrapping
-    const NODE_GAP_X = 56; // horizontal gap between children
-    const NODE_GAP_Y = 80; // vertical gap between rows
+    const NODE_GAP_X = 140; // horizontal gap between children
+    const NODE_GAP_Y = 120; // vertical gap between rows
 
     // Collect ALL original edges from every level for rendering later
     const allOriginalEdges: ElkEdge[] = [];
@@ -428,7 +489,15 @@ export async function renderSvg(
 
       let positionedChildren: ElkNode[];
 
-      if (localEdges.length > 0 && laidOutChildren.length <= MAX_COLS * 3) {
+      const hasStructuralChildren = laidOutChildren.some((c) =>
+        hasCssClassToken(c, STRUCTURAL_CLASS_TOKENS)
+      );
+
+      if (
+        localEdges.length > 0 &&
+        laidOutChildren.length <= 12 &&
+        !hasStructuralChildren
+      ) {
         // Use the core engine for rank-based layout when there are edges
         const engine = await createLayoutEngine('custom', {
           rankdir: 'TB',
@@ -459,36 +528,63 @@ export async function renderSvg(
           return child;
         });
       } else {
-        // Grid layout: wrap children into rows of MAX_COLS
-        const cols = Math.min(laidOutChildren.length, MAX_COLS);
-        positionedChildren = laidOutChildren.map((child, i) => {
-          const col = i % cols;
-          const row = Math.floor(i / cols);
+        // Flow Layout (Masonry) for tightly packing mixed-size items
+        const isAz = (c: ElkNode) => hasCssClassToken(c, ZONE_CLASS_TOKENS);
+        const azChildren = laidOutChildren.filter((c) => isAz(c));
+        const nonAzChildren = laidOutChildren.filter((c) => !isAz(c));
 
-          // Calculate X position: sum of widths in this row before this col
-          let x = CONTAINER_PAD;
-          for (let c = 0; c < col; c++) {
-            const prevIdx = row * cols + c;
-            if (prevIdx < laidOutChildren.length) {
-              x += (laidOutChildren[prevIdx].width || 96) + NODE_GAP_X;
-            }
-          }
+        let currentX = 0;
+        const columns: { x: number; w: number; y: number }[] = [];
 
-          // Calculate Y position: sum of max heights of rows above
-          let y = CONTAINER_TOP;
-          for (let r = 0; r < row; r++) {
-            let maxH = 0;
-            for (let c = 0; c < cols; c++) {
-              const idx = r * cols + c;
-              if (idx < laidOutChildren.length) {
-                maxH = Math.max(maxH, laidOutChildren[idx].height || 116);
-              }
-            }
-            y += maxH + NODE_GAP_Y;
-          }
-
-          return { ...child, x, y };
+        const positionedAzs = azChildren.map((c) => {
+          const res = { ...c, x: currentX + CONTAINER_PAD, y: CONTAINER_TOP };
+          columns.push({
+            x: currentX,
+            w: (c.width || 0) + NODE_GAP_X,
+            y: CONTAINER_TOP + (c.height || 0) + NODE_GAP_Y,
+          });
+          currentX += (c.width || 0) + NODE_GAP_X;
+          return res;
         });
+
+        if (columns.length === 0 && nonAzChildren.length > 0) {
+          let maxChildWidth = 400;
+          for (const c of nonAzChildren) {
+            if (c.width && c.width > maxChildWidth) {
+              maxChildWidth = c.width;
+            }
+          }
+          const numCols = Math.min(
+            Math.ceil(Math.sqrt(nonAzChildren.length)),
+            4
+          );
+          for (let i = 0; i < numCols; i++) {
+            const colObj = {
+              x: i * (maxChildWidth + NODE_GAP_X),
+              w: maxChildWidth,
+              y: CONTAINER_TOP,
+            };
+            columns.push(colObj);
+          }
+        }
+
+        const positionedNonAz: ElkNode[] = [];
+        nonAzChildren.forEach((c) => {
+          let minCol = columns[0] || { x: 0, w: 0, y: CONTAINER_TOP };
+          for (const col of columns) {
+            if (col.y < minCol.y) minCol = col;
+          }
+
+          positionedNonAz.push({
+            ...c,
+            x: minCol.x + CONTAINER_PAD,
+            y: minCol.y,
+          });
+
+          minCol.y += (c.height || 0) + NODE_GAP_Y;
+        });
+
+        positionedChildren = [...positionedAzs, ...positionedNonAz];
       }
 
       // Compute container size from children bounds
@@ -499,9 +595,13 @@ export async function renderSvg(
         maxY = Math.max(maxY, (child.y || 0) + (child.height || 0));
       });
 
+      const labelText = node.labels?.[0]?.text || '';
+      // Heuristic: ~8px per character + 80px padding for the pill structure
+      const minLabelWidth = labelText.length * 8 + 80;
+
       return {
         ...node,
-        width: maxX + CONTAINER_PAD,
+        width: Math.max(maxX + CONTAINER_PAD, minLabelWidth),
         height: maxY + CONTAINER_PAD,
         children: positionedChildren,
         edges: [],
@@ -511,183 +611,90 @@ export async function renderSvg(
     layout = await layoutNode(graph);
     layout.properties = graph.properties;
 
-    // ── Build absolute positions for every node ──
+    // Pass 1: Global absolute positioning calculation
     const absPositions = new Map<
       string,
-      { x: number; y: number; w: number; h: number }
+      {
+        id: string;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        isLeaf: boolean;
+        type?: string;
+        isStacked?: boolean;
+        label?: string;
+      }
     >();
+    const parentChain = new Map<string, string>(); // childId -> parentId
+
     const buildAbsPositions = (n: ElkNode, ox: number, oy: number) => {
       const ax = ox + (n.x || 0);
       const ay = oy + (n.y || 0);
+      const isLeaf = !n.children || n.children.length === 0;
       absPositions.set(n.id, {
+        id: n.id,
         x: ax,
         y: ay,
         w: n.width || 0,
         h: n.height || 0,
+        isLeaf,
+        type: n.properties?.type,
+        isStacked: n.properties?.isStacked,
+        label: n.labels?.[0]?.text || '',
       });
-      n.children?.forEach((c) => buildAbsPositions(c, ax, ay));
+      n.children?.forEach((c) => {
+        parentChain.set(c.id, n.id);
+        buildAbsPositions(c, ax, ay);
+      });
     };
     buildAbsPositions(layout, 0, 0);
 
-    // ── Collect LEAF node bounding boxes for collision avoidance ──
-    // Only leaf nodes (no children) are obstacles — containers are not,
-    // because edges legitimately pass through container boundaries.
-    const leafNodeBoxes: {
+    const allObstacles: {
       id: string;
       x: number;
       y: number;
-      r: number;
-      b: number;
-    }[] = [];
-    const collectLeafBoxes = (n: ElkNode, ox: number, oy: number) => {
-      const ax = ox + (n.x || 0);
-      const ay = oy + (n.y || 0);
-      if (!n.children || n.children.length === 0) {
-        leafNodeBoxes.push({
-          id: n.id,
-          x: ax,
-          y: ay,
-          r: ax + (n.width || 0),
-          b: ay + (n.height || 0),
-        });
-      }
-      n.children?.forEach((c) => collectLeafBoxes(c, ax, ay));
-    };
-    collectLeafBoxes(layout, 0, 0);
+      w: number;
+      h: number;
+      isLeaf: boolean;
+    }[] = Array.from(absPositions.values()).map((p) => ({
+      id: p.id,
+      x: p.x,
+      y: p.y,
+      w: p.w,
+      h: p.h,
+      isLeaf: p.isLeaf,
+    }));
 
-    // Build parent chain map for proper ancestor walking
-    const parentChain = new Map<string, string>();
-    const buildParentChain = (n: ElkNode, parentId?: string) => {
-      if (parentId) parentChain.set(n.id, parentId);
-      n.children?.forEach((c) => buildParentChain(c, n.id));
-    };
-    buildParentChain(layout);
-
-    /**
-     * Find ALL horizontal collisions for a segment at Y between x1..x2
-     */
-    const findAllHorizontalCollisions = (
-      y: number,
-      x1: number,
-      x2: number,
-      skipIds: Set<string>,
-      margin: number = 4
-    ): typeof leafNodeBoxes => {
-      const lo = Math.min(x1, x2);
-      const hi = Math.max(x1, x2);
-      const results: typeof leafNodeBoxes = [];
-      for (const box of leafNodeBoxes) {
-        if (skipIds.has(box.id)) continue;
-        if (
-          y > box.y - margin &&
-          y < box.b + margin &&
-          hi > box.x - margin &&
-          lo < box.r + margin
-        ) {
-          results.push(box);
-        }
-      }
-      return results;
-    };
-
-    /**
-     * Find ALL vertical collisions for a segment at X between y1..y2
-     */
-    const findAllVerticalCollisions = (
-      x: number,
-      y1: number,
-      y2: number,
-      skipIds: Set<string>,
-      margin: number = 4
-    ): typeof leafNodeBoxes => {
-      const lo = Math.min(y1, y2);
-      const hi = Math.max(y1, y2);
-      const results: typeof leafNodeBoxes = [];
-      for (const box of leafNodeBoxes) {
-        if (skipIds.has(box.id)) continue;
-        if (
-          x > box.x - margin &&
-          x < box.r + margin &&
-          hi > box.y - margin &&
-          lo < box.b + margin
-        ) {
-          results.push(box);
-        }
-      }
-      return results;
-    };
-
-    /**
-     * Find a clear horizontal Y that doesn't collide with any leaf
-     * node across the x-range. Uses iterative re-checking (up to 5
-     * passes) in case the rerouted Y itself collides with other nodes.
-     */
-    const findClearHorizontalY = (
-      preferredY: number,
-      x1: number,
-      x2: number,
-      skipIds: Set<string>,
-      yFloor: number,
-      yCeil: number,
-      margin: number = EDGE_MARGIN
-    ): number => {
-      let y = preferredY;
-      for (let pass = 0; pass < 5; pass++) {
-        const cols = findAllHorizontalCollisions(y, x1, x2, skipIds, margin);
-        if (cols.length === 0) return y;
-        // Find the topmost and bottommost collision
-        let topmost = Infinity,
-          bottommost = -Infinity;
-        for (const c of cols) {
-          topmost = Math.min(topmost, c.y);
-          bottommost = Math.max(bottommost, c.b);
-        }
-        const aboveY = topmost - margin;
-        const belowY = bottommost + margin;
-        const distAbove = Math.abs(y - aboveY);
-        const distBelow = Math.abs(y - belowY);
-        // Pick the closer clear path
-        if (distAbove <= distBelow && aboveY >= yFloor - 100) {
-          y = aboveY;
-        } else {
-          y = belowY;
-        }
-      }
-      return y;
-    };
-
-    /**
-     * Find a clear vertical X that doesn't collide with any leaf
-     * node across the y-range. Uses iterative re-checking.
-     */
-    const findClearVerticalX = (
-      preferredX: number,
-      y1: number,
-      y2: number,
-      skipIds: Set<string>,
-      goRight: boolean,
-      margin: number = EDGE_MARGIN
-    ): number => {
-      let x = preferredX;
-      for (let pass = 0; pass < 5; pass++) {
-        const cols = findAllVerticalCollisions(x, y1, y2, skipIds, margin);
-        if (cols.length === 0) return x;
-        let leftmost = Infinity,
-          rightmost = -Infinity;
-        for (const c of cols) {
-          leftmost = Math.min(leftmost, c.x);
-          rightmost = Math.max(rightmost, c.r);
-        }
-        x = goRight ? rightmost + margin : leftmost - margin;
-      }
-      return x;
-    };
-
-    // ── Route ALL original edges using absolute positions ──
+    // ── Route ALL original edges using A* ──
     const routedEdges: ElkEdge[] = [];
-    const EDGE_MARGIN = 20; // clearance around nodes for edges
+    const verticalPortUsage = new Map<number, number>();
+    const horizontalPortUsage = new Map<number, number>();
 
-    allOriginalEdges.forEach((origEdge, idx) => {
+    const getVerticalOffset = (x: number) => {
+      const key = Math.round(x / 5) * 5;
+      const count = verticalPortUsage.get(key) || 0;
+      verticalPortUsage.set(key, count + 1);
+      const sign = count % 2 === 0 ? 1 : -1;
+      const mag = Math.floor((count + 1) / 2) * 15;
+      return sign * mag;
+    };
+
+    const getHorizontalOffset = (y: number) => {
+      const key = Math.round(y / 5) * 5;
+      const count = horizontalPortUsage.get(key) || 0;
+      horizontalPortUsage.set(key, count + 1);
+      const sign = count % 2 === 0 ? 1 : -1;
+      const mag = Math.floor((count + 1) / 2) * 15;
+      return sign * mag;
+    };
+
+    const getPillBounds = (pos: { x: number; w: number; label?: string }) => {
+      const { actualLabelW } = calculateLabelDimensions(pos.label, pos.w);
+      return { left: pos.x + 16, right: pos.x + 16 + actualLabelW };
+    };
+
+    allOriginalEdges.forEach((origEdge) => {
       const srcId = origEdge.sources[0];
       const tgtId = origEdge.targets[0];
       const srcPos = absPositions.get(srcId);
@@ -699,11 +706,91 @@ export async function renderSvg(
       const tgtCx = tgtPos.x + tgtPos.w / 2;
       const tgtCy = tgtPos.y + tgtPos.h / 2;
 
-      // Per-edge jitter to separate parallel edges
-      const jitter = ((idx % 10) - 5) * 5;
+      let sOffX = 0,
+        tOffX = 0;
+      let sOffY = 0,
+        tOffY = 0;
 
-      // Build skip set: source, target, and their parent chain up to root.
-      // This prevents the edge from treating its own containers as obstacles.
+      const isVertical = Math.abs(tgtCx - srcCx) < Math.abs(tgtCy - srcCy);
+
+      if (isVertical) {
+        if (Math.abs(srcCx - tgtCx) < 5) {
+          const off = getVerticalOffset(srcCx);
+          sOffX = off;
+          tOffX = off;
+        } else {
+          sOffX = getVerticalOffset(srcCx);
+          tOffX = getVerticalOffset(tgtCx);
+        }
+      } else {
+        if (Math.abs(srcCy - tgtCy) < 5) {
+          const off = getHorizontalOffset(srcCy);
+          sOffY = off;
+          tOffY = off;
+        } else {
+          sOffY = getHorizontalOffset(srcCy);
+          tOffY = getHorizontalOffset(tgtCy);
+        }
+      }
+
+      let srcTopAdjust = 0;
+      if (srcPos?.type === 'container') {
+        const bounds = getPillBounds(srcPos);
+        if (
+          srcCx + sOffX >= bounds.left - 5 &&
+          srcCx + sOffX <= bounds.right + 5
+        ) {
+          srcTopAdjust = -14;
+        }
+      } else if (srcPos?.isStacked) srcTopAdjust = -8;
+
+      let tgtTopAdjust = 0;
+      if (tgtPos?.type === 'container') {
+        const bounds = getPillBounds(tgtPos);
+        if (
+          tgtCx + tOffX >= bounds.left - 5 &&
+          tgtCx + tOffX <= bounds.right + 5
+        ) {
+          tgtTopAdjust = -14;
+        }
+      } else if (tgtPos?.isStacked) tgtTopAdjust = -8;
+
+      const srcBot = srcPos.y + srcPos.h;
+      const srcTop = srcPos.y + srcTopAdjust;
+      const tgtBot = tgtPos.y + tgtPos.h;
+      const tgtTop = tgtPos.y + tgtTopAdjust;
+
+      let startPt: { x: number; y: number };
+      let endPt: { x: number; y: number };
+      let startStub: { x: number; y: number };
+      let endStub: { x: number; y: number };
+
+      if (isVertical) {
+        if (tgtTop > srcBot - 10) {
+          startPt = { x: srcCx + sOffX, y: srcBot };
+          startStub = { x: srcCx + sOffX, y: srcBot + 20 };
+          endPt = { x: tgtCx + tOffX, y: tgtTop };
+          endStub = { x: tgtCx + tOffX, y: tgtTop - 20 };
+        } else {
+          startPt = { x: srcCx + sOffX, y: srcTop };
+          startStub = { x: srcCx + sOffX, y: srcTop - 20 };
+          endPt = { x: tgtCx + tOffX, y: tgtBot };
+          endStub = { x: tgtCx + tOffX, y: tgtBot + 20 };
+        }
+      } else {
+        if (tgtCx > srcCx) {
+          startPt = { x: srcPos.x + srcPos.w, y: srcCy + sOffY };
+          startStub = { x: srcPos.x + srcPos.w + 20, y: srcCy + sOffY };
+          endPt = { x: tgtPos.x, y: tgtCy + tOffY };
+          endStub = { x: tgtPos.x - 20, y: tgtCy + tOffY };
+        } else {
+          startPt = { x: srcPos.x, y: srcCy + sOffY };
+          startStub = { x: srcPos.x - 20, y: srcCy + sOffY };
+          endPt = { x: tgtPos.x + tgtPos.w, y: tgtCy + tOffY };
+          endStub = { x: tgtPos.x + tgtPos.w + 20, y: tgtCy + tOffY };
+        }
+      }
+
       const skipIds = new Set<string>();
       const addParentChain = (nodeId: string) => {
         skipIds.add(nodeId);
@@ -716,184 +803,39 @@ export async function renderSvg(
       addParentChain(srcId);
       addParentChain(tgtId);
 
-      let startPt: { x: number; y: number };
-      let endPt: { x: number; y: number };
-      let bendPoints: { x: number; y: number }[];
+      // Filter obstacles: treat all non-ancestor nodes (both leaf and container) as solid obstacles
+      const activeObstacles = allObstacles.filter((o) => !skipIds.has(o.id));
 
-      const srcBot = srcPos.y + srcPos.h;
-      const srcTop = srcPos.y;
-      const tgtBot = tgtPos.y + tgtPos.h;
-      const tgtTop = tgtPos.y;
-
-      if (tgtTop > srcBot - 10) {
-        // ─── Target is BELOW source ───
-        startPt = { x: srcCx, y: srcBot + 2 };
-        endPt = { x: tgtCx, y: tgtTop - 2 };
-
-        // Find clear horizontal Y for the crossover
-        const preferredMidY = (srcBot + tgtTop) / 2 + jitter;
-        const midY = findClearHorizontalY(
-          preferredMidY,
-          Math.min(srcCx, tgtCx),
-          Math.max(srcCx, tgtCx),
-          skipIds,
-          srcBot,
-          tgtTop
+      let mappedBends: { x: number; y: number }[];
+      try {
+        const astarResult = routeAStar(startStub, endStub, activeObstacles, 20);
+        mappedBends = astarResult.points.map((p) => ({
+          x: p.x,
+          y: p.y,
+        }));
+      } catch (err) {
+        console.warn(
+          `[ADAC Routing] A* routing failed for edge ${origEdge.id}:`,
+          err
         );
-
-        // Check vertical segments for collision and route around if needed
-        const srcGoRight = tgtCx > srcCx;
-        const clearSrcX = findClearVerticalX(
-          srcCx,
-          srcBot,
-          midY,
-          skipIds,
-          srcGoRight
-        );
-        const clearTgtX = findClearVerticalX(
-          tgtCx,
-          midY,
-          tgtTop,
-          skipIds,
-          srcGoRight
-        );
-
-        if (clearSrcX !== srcCx || clearTgtX !== tgtCx) {
-          // Need extra bends to avoid vertical collisions
-          bendPoints = [
-            { x: srcCx, y: srcBot + EDGE_MARGIN },
-            { x: clearSrcX, y: srcBot + EDGE_MARGIN },
-            { x: clearSrcX, y: midY },
-            { x: clearTgtX, y: midY },
-            { x: clearTgtX, y: tgtTop - EDGE_MARGIN },
-            { x: tgtCx, y: tgtTop - EDGE_MARGIN },
-          ];
-          // Clean up redundant bends where X values match
-          bendPoints = bendPoints.filter((pt, i) => {
-            if (i === 0) return true;
-            const prev = bendPoints[i - 1];
-            return !(pt.x === prev.x && pt.y === prev.y);
-          });
-        } else {
-          bendPoints = [
-            { x: srcCx, y: midY },
-            { x: tgtCx, y: midY },
-          ];
-        }
-      } else if (srcTop > tgtBot - 10) {
-        // ─── Target is ABOVE source ───
-        startPt = { x: srcCx, y: srcTop - 2 };
-        endPt = { x: tgtCx, y: tgtBot + 2 };
-
-        const preferredMidY = (tgtBot + srcTop) / 2 + jitter;
-        const midY = findClearHorizontalY(
-          preferredMidY,
-          Math.min(srcCx, tgtCx),
-          Math.max(srcCx, tgtCx),
-          skipIds,
-          tgtBot,
-          srcTop
-        );
-
-        const goRight = tgtCx > srcCx;
-        const clearSrcX = findClearVerticalX(
-          srcCx,
-          midY,
-          srcTop,
-          skipIds,
-          goRight
-        );
-        const clearTgtX = findClearVerticalX(
-          tgtCx,
-          tgtBot,
-          midY,
-          skipIds,
-          goRight
-        );
-
-        if (clearSrcX !== srcCx || clearTgtX !== tgtCx) {
-          bendPoints = [
-            { x: srcCx, y: srcTop - EDGE_MARGIN },
-            { x: clearSrcX, y: srcTop - EDGE_MARGIN },
-            { x: clearSrcX, y: midY },
-            { x: clearTgtX, y: midY },
-            { x: clearTgtX, y: tgtBot + EDGE_MARGIN },
-            { x: tgtCx, y: tgtBot + EDGE_MARGIN },
-          ];
-          bendPoints = bendPoints.filter((pt, i) => {
-            if (i === 0) return true;
-            const prev = bendPoints[i - 1];
-            return !(pt.x === prev.x && pt.y === prev.y);
-          });
-        } else {
-          bendPoints = [
-            { x: srcCx, y: midY },
-            { x: tgtCx, y: midY },
-          ];
-        }
-      } else {
-        // ─── Same vertical level → horizontal routing ───
-        const goRight = tgtCx > srcCx;
-
-        startPt = {
-          x: goRight ? srcPos.x + srcPos.w + 2 : srcPos.x - 2,
-          y: srcCy,
-        };
-        endPt = {
-          x: goRight ? tgtPos.x - 2 : tgtPos.x + tgtPos.w + 2,
-          y: tgtCy,
-        };
-
-        // Find clear vertical X for the crossover
-        const preferredMidX = (srcCx + tgtCx) / 2 + jitter;
-        const midX = findClearVerticalX(
-          preferredMidX,
-          Math.min(srcCy, tgtCy),
-          Math.max(srcCy, tgtCy),
-          skipIds,
-          goRight
-        );
-
-        // Check if horizontal segments collide
-        const clearSrcY = findClearHorizontalY(
-          srcCy,
-          startPt.x,
-          midX,
-          skipIds,
-          srcPos.y - 50,
-          srcPos.y + srcPos.h + 50
-        );
-        const clearTgtY = findClearHorizontalY(
-          tgtCy,
-          midX,
-          endPt.x,
-          skipIds,
-          tgtPos.y - 50,
-          tgtPos.y + tgtPos.h + 50
-        );
-
-        if (clearSrcY !== srcCy || clearTgtY !== tgtCy) {
-          startPt.y = clearSrcY;
-          endPt.y = clearTgtY;
-        }
-
-        bendPoints = [
-          { x: midX, y: startPt.y },
-          { x: midX, y: endPt.y },
+        const midY = (startStub.y + endStub.y) / 2;
+        mappedBends = [
+          { x: startStub.x, y: midY },
+          { x: endStub.x, y: midY },
         ];
       }
 
       routedEdges.push({
-        id: `global-e${idx}`,
+        id: origEdge.id,
         sources: [srcId],
         targets: [tgtId],
         labels: origEdge.labels,
         sections: [
           {
-            id: `global-s${idx}`,
+            id: `global-s${origEdge.id}`,
             startPoint: startPt,
             endPoint: endPt,
-            bendPoints,
+            bendPoints: mappedBends,
           },
         ],
       });
@@ -991,6 +933,8 @@ export async function renderSvg(
 
   const nodeAbsPos = new Map<string, { x: number; y: number }>();
   const parentMap = new Map<string, string>();
+  const nodesMap = new Map<string, ElkNode>();
+
   const mapNodePositions = (
     n: ElkNode,
     ox: number,
@@ -999,8 +943,24 @@ export async function renderSvg(
   ) => {
     const cx = ox + (n.x || 0),
       cy = oy + (n.y || 0);
+    const nw = n.width || 0;
+    const nh = n.height || 0;
     nodeAbsPos.set(n.id, { x: cx, y: cy });
+    nodesMap.set(n.id, n);
     if (pid) parentMap.set(n.id, pid);
+    if (pid) {
+      const isContainer =
+        n.properties?.type === 'container' ||
+        Boolean(n.children && n.children.length > 0);
+      allNodeBoxes.push({
+        id: n.id,
+        x: cx,
+        y: cy,
+        right: cx + nw,
+        bottom: cy + nh,
+        isContainer,
+      });
+    }
     if (n.children)
       n.children.forEach((c) => mapNodePositions(c, cx, cy, n.id));
   };
@@ -1008,6 +968,7 @@ export async function renderSvg(
 
   const allEdges: ElkEdge[] = [];
   const processedEdgeIds = new Set<string>();
+  const processedLabelKeys = new Set<string>();
   const collectEdges = (n: ElkNode) => {
     if (n.edges) {
       n.edges.forEach((e) => {
@@ -1060,38 +1021,6 @@ export async function renderSvg(
       ? 'url(#arrow-azure)'
       : 'url(#arrow)';
 
-  const edgesOutput = allEdges
-    .map((e) => {
-      return (e.sections || [])
-        .map((s) => {
-          let d = `M ${s.startPoint.x} ${s.startPoint.y}`;
-          s.bendPoints?.forEach((b) => (d += ` L ${b.x} ${b.y}`));
-          d += ` L ${s.endPoint.x} ${s.endPoint.y}`;
-          let edgeSvg = `<path d="${d}" class="${defaultEdgeClass}" marker-end="${defaultArrow}"/>`;
-
-          // Add edge label if available
-          const edgeLabel = e.labels?.[0]?.text;
-          if (edgeLabel) {
-            // Place label at midpoint of first segment (start → first bend)
-            const firstBend = s.bendPoints?.[0] || s.endPoint;
-            const labelX = (s.startPoint.x + firstBend.x) / 2;
-            const labelY = (s.startPoint.y + firstBend.y) / 2 - 6;
-            // Add background rect for readability
-            const textLen = edgeLabel.length * 6.5;
-            edgeSvg += `<rect x="${labelX - textLen / 2 - 2}" y="${labelY - 10}" width="${textLen + 4}" height="14" rx="2" fill="white" fill-opacity="0.85"/>`;
-            edgeSvg += `<text x="${labelX}" y="${labelY}" class="edge-label" text-anchor="middle">${edgeLabel}</text>`;
-          }
-          return edgeSvg;
-        })
-        .join('');
-    })
-    .join('');
-
-  const resolveNodeCost = (id: string): number | undefined => {
-    if (!perServiceCosts) return undefined;
-    return perServiceCosts[id];
-  };
-
   const escapeXml = (s: string) =>
     s.replace(
       /[<>&'"]/g,
@@ -1104,6 +1033,259 @@ export async function renderSvg(
           '"': '&quot;',
         })[c] || ''
     );
+
+  const placedLabels: { l: number; r: number; t: number; b: number }[] = [];
+  let edgePathsOutput = '';
+  let edgeLabelsOutput = '';
+
+  // Precompute all edge segment bounding boxes for fast collision detection
+  const edgeSegmentsCache: {
+    edgeId: string;
+    sLeft: number;
+    sRight: number;
+    sTop: number;
+    sBottom: number;
+  }[] = [];
+  allEdges.forEach((otherEdge) => {
+    (otherEdge.sections || []).forEach((otherSec) => {
+      const otherPts = [
+        otherSec.startPoint,
+        ...(otherSec.bendPoints || []),
+        otherSec.endPoint,
+      ];
+      for (let j = 0; j < otherPts.length - 1; j++) {
+        const p1 = otherPts[j];
+        const p2 = otherPts[j + 1];
+        edgeSegmentsCache.push({
+          edgeId: otherEdge.id,
+          sLeft: Math.min(p1.x, p2.x),
+          sRight: Math.max(p1.x, p2.x),
+          sTop: Math.min(p1.y, p2.y),
+          sBottom: Math.max(p1.y, p2.y),
+        });
+      }
+    });
+  });
+
+  allEdges.forEach((e) => {
+    (e.sections || []).forEach((s) => {
+      const pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      const R = 12; // Corner radius
+
+      for (let i = 1; i < pts.length - 1; i++) {
+        const p0 = pts[i - 1];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+
+        const dx1 = p1.x - p0.x;
+        const dy1 = p1.y - p0.y;
+        const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+
+        const dx2 = p2.x - p1.x;
+        const dy2 = p2.y - p1.y;
+        const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+
+        const r = Math.min(R, len1 / 2, len2 / 2);
+
+        const cross = (dx1 / len1) * (dy2 / len2) - (dy1 / len1) * (dx2 / len2);
+
+        if (r > 1 && Math.abs(cross) > 0.001) {
+          const startX = p1.x - (dx1 / len1) * r;
+          const startY = p1.y - (dy1 / len1) * r;
+          d += ` L ${startX} ${startY}`;
+
+          const endX = p1.x + (dx2 / len2) * r;
+          const endY = p1.y + (dy2 / len2) * r;
+
+          const sweep = cross > 0 ? 1 : 0;
+
+          d += ` A ${r} ${r} 0 0 ${sweep} ${endX} ${endY}`;
+        } else {
+          d += ` L ${p1.x} ${p1.y}`;
+        }
+      }
+      const last = pts[pts.length - 1];
+      d += ` L ${last.x} ${last.y}`;
+
+      let edgeClass = '';
+      let tNode: ElkNode | undefined | null = null;
+      if (e.targets && e.targets.length > 0) {
+        let currTarget = e.targets[0];
+        while (currTarget) {
+          tNode = nodesMap.get(currTarget);
+          if (tNode?.properties?.type === 'container') {
+            const cCls = tNode.properties.cssClass;
+            if (typeof cCls === 'string' && cCls) {
+              const classToken = cCls.split(/\s+/).find(Boolean);
+              if (classToken) {
+                edgeClass = `dynamic-edge ${classToken}-edge`;
+              }
+            }
+            break;
+          }
+          if (tNode) break; // Found the leaf target
+          currTarget = parentMap.get(currTarget) || '';
+        }
+      }
+
+      const finalClass = edgeClass
+        ? `${edgeClass} ${defaultEdgeClass}`
+        : defaultEdgeClass;
+      edgePathsOutput += `<path d="${d}" class="${finalClass}" marker-end="${defaultArrow}"/>`;
+
+      // Add edge label if available
+      const edgeLabel = e.labels?.[0]?.text;
+      if (edgeLabel) {
+        let maxLen = -1;
+        let longestSegStart = s.startPoint;
+        let longestSegEnd = s.endPoint;
+
+        let isVertical = false;
+
+        for (let i = 0; i < pts.length - 1; i++) {
+          const p1 = pts[i];
+          const p2 = pts[i + 1];
+          const len = Math.abs(p1.x - p2.x) + Math.abs(p1.y - p2.y);
+          if (len > maxLen) {
+            maxLen = len;
+            longestSegStart = p1;
+            longestSegEnd = p2;
+            isVertical = Math.abs(p1.y - p2.y) > Math.abs(p1.x - p2.x);
+          }
+        }
+
+        const labelX =
+          (longestSegStart.x + longestSegEnd.x) / 2 + (isVertical ? 6 : 0);
+        const labelY =
+          (longestSegStart.y + longestSegEnd.y) / 2 - (isVertical ? 0 : 6);
+
+        let placed = false;
+        let finalX = labelX,
+          finalY = labelY;
+        const textLen = edgeLabel.length * 6.5;
+        const textW = isVertical ? 14 : textLen + 4;
+        const textH = isVertical ? textLen + 4 : 14;
+
+        const offsets = isVertical
+          ? [
+              { x: 0, y: 0 },
+              { x: 16, y: 0 },
+              { x: -16, y: 0 },
+              { x: 32, y: 0 },
+              { x: -32, y: 0 },
+              { x: 0, y: textLen / 2 + 10 },
+              { x: 0, y: -(textLen / 2 + 10) },
+              { x: 48, y: 0 },
+              { x: -48, y: 0 },
+            ]
+          : [
+              { x: 0, y: 0 },
+              { x: 0, y: 16 },
+              { x: 0, y: -16 },
+              { x: 0, y: 32 },
+              { x: 0, y: -32 },
+              { x: textLen / 2 + 10, y: 0 },
+              { x: -(textLen / 2 + 10), y: 0 },
+              { x: 0, y: 48 },
+              { x: 0, y: -48 },
+            ];
+
+        for (const off of offsets) {
+          const cx = labelX + off.x;
+          const cy = labelY + off.y;
+
+          const tLeft = cx - textW / 2;
+          const tRight = cx + textW / 2;
+          const tTop = cy - textH / 2;
+          const tBottom = cy + textH / 2;
+
+          const overlapsLabel = placedLabels.some((lb) => {
+            return (
+              tLeft <= lb.r && tRight >= lb.l && tTop <= lb.b && tBottom >= lb.t
+            );
+          });
+
+          const overlapsNode = allNodeBoxes.some((b) => {
+            if (b.isContainer) {
+              // Check title banner + bottom/left/right borders
+              const onTitle =
+                tBottom > b.y &&
+                tTop < b.y + 44 &&
+                tRight > b.x &&
+                tLeft < b.right;
+              const onBottom =
+                tBottom > b.bottom - 14 &&
+                tTop < b.bottom &&
+                tRight > b.x &&
+                tLeft < b.right;
+              const onLeft =
+                tRight > b.x - 14 &&
+                tLeft < b.x &&
+                tBottom > b.y &&
+                tTop < b.bottom;
+              const onRight =
+                tRight > b.right &&
+                tLeft < b.right + 14 &&
+                tBottom > b.y &&
+                tTop < b.bottom;
+              return onTitle || onBottom || onLeft || onRight;
+            }
+
+            // Solid block for leaf nodes
+            return (
+              tBottom > b.y &&
+              tTop < b.bottom &&
+              tRight > b.x &&
+              tLeft < b.right
+            );
+          });
+
+          const overlapsOtherEdge = edgeSegmentsCache.some((seg) => {
+            if (seg.edgeId === e.id) return false;
+            return (
+              tLeft <= seg.sRight &&
+              tRight >= seg.sLeft &&
+              tTop <= seg.sBottom &&
+              tBottom >= seg.sTop
+            );
+          });
+
+          if (!overlapsLabel && !overlapsNode && !overlapsOtherEdge) {
+            finalX = cx;
+            finalY = cy;
+            placed = true;
+            break;
+          }
+        }
+
+        if (!placed) {
+          finalX = labelX;
+          finalY = labelY + (isVertical ? 0 : 16);
+        }
+
+        const labelKey = `${finalX.toFixed(1)},${finalY.toFixed(1)},${edgeLabel}`;
+        if (!processedLabelKeys.has(labelKey)) {
+          processedLabelKeys.add(labelKey);
+          placedLabels.push({
+            l: finalX - textW / 2,
+            r: finalX + textW / 2,
+            t: finalY - textH / 2,
+            b: finalY + textH / 2,
+          });
+          const transformAttr = isVertical
+            ? ` transform="rotate(90 ${finalX} ${finalY})"`
+            : '';
+          edgeLabelsOutput += `<text x="${finalX}" y="${finalY}" class="edge-label" text-anchor="middle"${transformAttr}>${escapeXml(edgeLabel)}</text>`;
+        }
+      }
+    });
+  });
+
+  const resolveNodeCost = (id: string): number | undefined => {
+    if (!perServiceCosts) return undefined;
+    return perServiceCosts[id];
+  };
 
   const renderNode = (node: ElkNode, offsetX = 0, offsetY = 0): string => {
     const nx = node.x || 0,
@@ -1190,40 +1372,38 @@ export async function renderSvg(
       const r = 14; // corner radius — consistent across all containers
 
       // 1. Container background + border
-      output += `<rect x="${absX}" y="${absY}" 
-        width="${nw}" height="${nh}" 
-        class="${rectClass}" 
+      output += `<rect x="${absX}" y="${absY}"
+        width="${nw}" height="${nh}"
+        class="${rectClass}"
         rx="${r}" ry="${r}"/>`;
 
-      // 2. Label strip — subtle tinted band at top
-      //    Height 32px, same corner radius at top only
-      output += `<path 
-        d="M${absX + r},${absY} H${absX + nw - r} Q${absX + nw},${absY} ${absX + nw},${absY + r} 
-           V${absY + 32} H${absX} V${absY + r} Q${absX},${absY} ${absX + r},${absY} Z" 
-        fill="currentColor" fill-opacity="0.07"/>`;
+      // 2. Label pill — standalone overlapping pill at the top-left
+      const pillH = 28;
+      const pillR = 14;
 
-      // 3. Label text — vertically centered in the 32px strip
-      //    x=14 gives 14px left padding, y=20 centers in strip
-      const maxLabelW = nw - 56; // leave room for icon on right
-      const charW = 6.5;
-      const maxChars = Math.floor(maxLabelW / charW);
-      const displayLabel =
-        label.length > maxChars + 2
-          ? label.substring(0, maxChars).trim() + '…'
-          : label;
+      const { displayLabel, actualLabelW } = calculateLabelDimensions(
+        label,
+        nw
+      );
 
-      output += `<text 
-        x="${absX + 14}" y="${absY + 20}" 
-        class="${labelCls}" 
+      output += `<rect x="${absX + 16}" y="${absY - pillR}"
+        width="${actualLabelW}" height="${pillH}"
+        rx="${pillR}" ry="${pillR}"
+        class="${rectClass} title-pill"/>`;
+
+      output += `<text
+        x="${absX + 16 + actualLabelW / 2}" y="${absY - pillR + pillH / 2}"
+        class="${labelCls}"
+        text-anchor="middle"
         dominant-baseline="middle">${escapeXml(displayLabel)}</text>`;
 
       // 4. Provider icon (top-right corner, 20×20)
       if (props.iconPath) {
         const iconUri = getIconDataUri({ path: props.iconPath });
         if (iconUri) {
-          output += `<image 
-            href="${iconUri}" 
-            x="${absX + nw - 28}" y="${absY + 6}" 
+          output += `<image
+            href="${iconUri}"
+            x="${absX + nw - 28}" y="${absY + 6}"
             width="20" height="20"
             preserveAspectRatio="xMidYMid meet"/>`;
         }
@@ -1264,9 +1444,20 @@ export async function renderSvg(
       if (complianceClass) cardClass += ` ${complianceClass}`;
 
       // ── Card background ─────────────────────────────────
-      output += `<rect x="${absX}" y="${absY}" 
-        width="${CARD_W}" height="${CARD_H}" 
-        class="${cardClass}" 
+      if (props.isStacked) {
+        output += `<rect x="${absX + 8}" y="${absY - 8}"
+          width="${CARD_W}" height="${CARD_H}"
+          class="${cardClass}"
+          rx="10" ry="10" fill-opacity="0.4" stroke-opacity="0.4"/>`;
+        output += `<rect x="${absX + 4}" y="${absY - 4}"
+          width="${CARD_W}" height="${CARD_H}"
+          class="${cardClass}"
+          rx="10" ry="10" fill-opacity="0.7" stroke-opacity="0.7"/>`;
+      }
+
+      output += `<rect x="${absX}" y="${absY}"
+        width="${CARD_W}" height="${CARD_H}"
+        class="${cardClass}"
         rx="10" ry="10"/>`;
 
       // ── Icon ─────────────────────────────────────────────
@@ -1274,34 +1465,34 @@ export async function renderSvg(
 
       if (iconUri) {
         // Icon background pill
-        output += `<rect 
-          x="${iconX - ICON_BG_PAD}" 
-          y="${iconY - ICON_BG_PAD}" 
-          width="${ICON_SIZE + ICON_BG_PAD * 2}" 
-          height="${ICON_SIZE + ICON_BG_PAD * 2}" 
-          rx="8" ry="8" 
+        output += `<rect
+          x="${iconX - ICON_BG_PAD}"
+          y="${iconY - ICON_BG_PAD}"
+          width="${ICON_SIZE + ICON_BG_PAD * 2}"
+          height="${ICON_SIZE + ICON_BG_PAD * 2}"
+          rx="8" ry="8"
           class="node-icon-bg"/>`;
-        output += `<image 
-          href="${iconUri}" 
-          x="${iconX}" y="${iconY}" 
+        output += `<image
+          href="${iconUri}"
+          x="${iconX}" y="${iconY}"
           width="${ICON_SIZE}" height="${ICON_SIZE}"
           preserveAspectRatio="xMidYMid meet"/>`;
       } else {
         // Fallback placeholder when no icon
-        output += `<rect 
-          x="${iconX}" y="${iconY}" 
-          width="${ICON_SIZE}" height="${ICON_SIZE}" 
-          rx="8" ry="8" 
-          fill="#EDF2F7" stroke="#CBD5E1" 
+        output += `<rect
+          x="${iconX}" y="${iconY}"
+          width="${ICON_SIZE}" height="${ICON_SIZE}"
+          rx="8" ry="8"
+          fill="#EDF2F7" stroke="#CBD5E1"
           stroke-width="1"/>`;
         // Placeholder "?" text
-        output += `<text 
-          x="${iconX + ICON_SIZE / 2}" 
-          y="${iconY + ICON_SIZE / 2 + 1}" 
-          class="${nodeLabelCls}" 
-          text-anchor="middle" 
-          dominant-baseline="middle" 
-          fill="#94A3B8" 
+        output += `<text
+          x="${iconX + ICON_SIZE / 2}"
+          y="${iconY + ICON_SIZE / 2 + 1}"
+          class="${nodeLabelCls}"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          fill="#94A3B8"
           font-size="16" font-weight="300">?</text>`;
       }
 
@@ -1312,16 +1503,16 @@ export async function renderSvg(
         const badgeH = 14;
         const badgeX = absX + CARD_W - badgeW - 4;
         const badgeY = absY + CARD_H - badgeH - 4;
-        output += `<rect 
-          x="${badgeX}" y="${badgeY}" 
-          width="${badgeW}" height="${badgeH}" 
-          rx="3" ry="3" 
+        output += `<rect
+          x="${badgeX}" y="${badgeY}"
+          width="${badgeW}" height="${badgeH}"
+          rx="3" ry="3"
           fill="#1E293B"/>`;
-        output += `<text 
-          x="${badgeX + badgeW / 2}" 
-          y="${badgeY + badgeH / 2 + 1}" 
-          class="cost-badge-text" 
-          text-anchor="middle" 
+        output += `<text
+          x="${badgeX + badgeW / 2}"
+          y="${badgeY + badgeH / 2 + 1}"
+          class="cost-badge-text"
+          text-anchor="middle"
           dominant-baseline="middle">${escapeXml(badgeTxt)}</text>`;
       }
 
@@ -1362,17 +1553,17 @@ export async function renderSvg(
         : labelStartY + 4;
       const line2Y = line1Y + LINE_H;
 
-      output += `<text 
-        x="${absX + CARD_W / 2}" y="${line1Y}" 
-        class="${nodeLabelCls}" 
-        text-anchor="middle" 
+      output += `<text
+        x="${absX + CARD_W / 2}" y="${line1Y}"
+        class="${nodeLabelCls}"
+        text-anchor="middle"
         dominant-baseline="auto">${escapeXml(truncate(line1))}</text>`;
 
       if (line2) {
-        output += `<text 
-          x="${absX + CARD_W / 2}" y="${line2Y}" 
-          class="${nodeLabelCls}" 
-          text-anchor="middle" 
+        output += `<text
+          x="${absX + CARD_W / 2}" y="${line2Y}"
+          class="${nodeLabelCls}"
+          text-anchor="middle"
           dominant-baseline="auto">${escapeXml(truncate(line2))}</text>`;
       }
     }
@@ -1382,7 +1573,8 @@ export async function renderSvg(
   };
 
   const provider = getProvider(layout);
-  const rootRect = `<rect width="${width}" height="${height}" class="${provider}-root" />`;
+  const rootRect = `<rect width="${width}" height="${height}" class="${provider}-root" />
+                    <rect width="${width}" height="${height}" fill="url(#dotGrid)" pointer-events="none" />`;
   const nodesOutput = (layout.children || [])
     .map((n) => renderNode(n))
     .join('');
@@ -1391,8 +1583,50 @@ export async function renderSvg(
   const renderLegend = () => {
     const LEGEND_W = 160;
     const LEGEND_H = 80;
-    const LX = width - LEGEND_W - 20;
-    const LY = height - LEGEND_H - 20;
+    // Legend bounds check: push left if there's a container collision
+    let LX = width - LEGEND_W - 20;
+    let LY = height - LEGEND_H - 20;
+    const legendOverlaps = (box: (typeof allNodeBoxes)[number]) =>
+      LY < box.bottom &&
+      LY + LEGEND_H > box.y &&
+      LX < box.right &&
+      LX + LEGEND_W > box.x;
+
+    for (const box of allNodeBoxes) {
+      if (legendOverlaps(box)) {
+        LX = box.x - LEGEND_W - 20; // push outside container
+      }
+    }
+    // Clamp legend to visible area — never render at negative coords
+    if (LX < 20) LX = 20;
+    // If clamped position still overlaps, try above the blocking box, then top-left.
+    const blockingBox = allNodeBoxes.find((box) => legendOverlaps(box));
+    if (blockingBox) {
+      LY = Math.max(20, blockingBox.y - LEGEND_H - 20);
+      if (allNodeBoxes.some((box) => legendOverlaps(box))) {
+        LY = 20;
+      }
+    }
+    const maxLegendY = Math.max(20, height - LEGEND_H - 20);
+    const candidatePositions = [
+      { x: LX, y: LY },
+      { x: 20, y: LY },
+      { x: width - LEGEND_W - 20, y: 20 },
+      { x: 20, y: 20 },
+    ];
+    for (let y = 20; y <= maxLegendY; y += 20) {
+      candidatePositions.push({ x: 20, y });
+      candidatePositions.push({ x: width - LEGEND_W - 20, y });
+    }
+    const clearPosition = candidatePositions.find((candidate) => {
+      LX = Math.max(20, Math.min(candidate.x, width - LEGEND_W - 20));
+      LY = Math.max(20, Math.min(candidate.y, maxLegendY));
+      return !allNodeBoxes.some((box) => legendOverlaps(box));
+    });
+    if (clearPosition) {
+      LX = Math.max(20, Math.min(clearPosition.x, width - LEGEND_W - 20));
+      LY = Math.max(20, Math.min(clearPosition.y, maxLegendY));
+    }
     const edgeColor =
       provider === 'gcp'
         ? '#4285F4'
@@ -1420,8 +1654,13 @@ export async function renderSvg(
   <defs>
     <style>${CSS_STYLES}</style>
 
+    <!-- Dotted Grid Pattern -->
+    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#CBD5E1" opacity="0.6"/>
+    </pattern>
+
     <!-- Container drop shadow: soft, barely visible -->
-    <filter id="containerShadow" 
+    <filter id="containerShadow"
       x="-8%" y="-8%" width="116%" height="116%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
       <feOffset dx="0" dy="2" result="blur"/>
@@ -1434,7 +1673,7 @@ export async function renderSvg(
     </filter>
 
     <!-- Node card shadow: tight, crisp -->
-    <filter id="nodeShadow" 
+    <filter id="nodeShadow"
       x="-15%" y="-15%" width="130%" height="130%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
       <feOffset dx="0" dy="1" result="blur"/>
@@ -1447,12 +1686,12 @@ export async function renderSvg(
     </filter>
 
     <!-- Compliance OK: green ring glow -->
-    <filter id="glowGreen" 
+    <filter id="glowGreen"
       x="-15%" y="-15%" width="130%" height="130%">
       <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feFlood flood-color="#16A34A" flood-opacity="0.4" 
+      <feFlood flood-color="#16A34A" flood-opacity="0.4"
         result="color"/>
-      <feComposite in="color" in2="blur" operator="in" 
+      <feComposite in="color" in2="blur" operator="in"
         result="glow"/>
       <feMerge>
         <feMergeNode in="glow"/>
@@ -1461,12 +1700,12 @@ export async function renderSvg(
     </filter>
 
     <!-- Compliance FAIL: red ring glow -->
-    <filter id="glowRed" 
+    <filter id="glowRed"
       x="-15%" y="-15%" width="130%" height="130%">
       <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feFlood flood-color="#DC2626" flood-opacity="0.4" 
+      <feFlood flood-color="#DC2626" flood-opacity="0.4"
         result="color"/>
-      <feComposite in="color" in2="blur" operator="in" 
+      <feComposite in="color" in2="blur" operator="in"
         result="glow"/>
       <feMerge>
         <feMergeNode in="glow"/>
@@ -1475,28 +1714,28 @@ export async function renderSvg(
     </filter>
 
     <!-- Arrow markers: one per provider -->
-    <marker id="arrow" viewBox="0 0 10 10" 
-      refX="9" refY="5" 
-      markerWidth="5" markerHeight="5" 
+    <marker id="arrow" viewBox="0 0 10 10"
+      refX="9" refY="5"
+      markerWidth="5" markerHeight="5"
       orient="auto-start-reverse">
-      <path d="M0,1.5 L8.5,5 L0,8.5 Z" 
+      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
         fill="#8FA3BF" stroke="none"/>
     </marker>
-    <marker id="arrow-gcp" viewBox="0 0 10 10" 
-      refX="9" refY="5" 
-      markerWidth="5" markerHeight="5" 
+    <marker id="arrow-gcp" viewBox="0 0 10 10"
+      refX="9" refY="5"
+      markerWidth="5" markerHeight="5"
       orient="auto-start-reverse">
-      <path d="M0,1.5 L8.5,5 L0,8.5 Z" 
+      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
         fill="#4285F4" stroke="none" fill-opacity="0.85"/>
     </marker>
-    <marker id="arrow-azure" viewBox="0 0 10 10" 
-      refX="9" refY="5" 
-      markerWidth="5" markerHeight="5" 
+    <marker id="arrow-azure" viewBox="0 0 10 10"
+      refX="9" refY="5"
+      markerWidth="5" markerHeight="5"
       orient="auto-start-reverse">
-      <path d="M0,1.5 L8.5,5 L0,8.5 Z" 
+      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
         fill="#0078D4" stroke="none" fill-opacity="0.85"/>
     </marker>
   </defs>
-  ${rootRect}${nodesOutput}${edgesOutput}${legendOutput}
+  ${rootRect}${nodesOutput}${edgePathsOutput}${edgeLabelsOutput}${legendOutput}
 </svg>`;
 }

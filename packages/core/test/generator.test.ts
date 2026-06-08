@@ -82,6 +82,102 @@ infrastructure:
     expect(resultElk.svg).toContain('<svg');
     expect(resultDagre.svg).toContain('<svg');
   });
+
+  it('should include compliance tooltips when compliance checks fail', async () => {
+    const complianceSpy = vi
+      .spyOn(
+        await import('@mindfiredigital/adac-compliance'),
+        'ComplianceChecker'
+      )
+      .mockImplementation(function () {
+        return {
+          checkCompliance: () => ({
+            byService: {
+              'vm-1': [
+                {
+                  framework: 'soc2',
+                  isCompliant: false,
+                  violations: [
+                    {
+                      ruleId: 'r1',
+                      message: 'Not compliant error',
+                      severity: 'high',
+                      remediation: 'Fix it',
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        };
+      });
+
+    const result = await generateDiagramSvg(validYaml);
+    expect(result.svg).toContain('soc2');
+    expect(result.svg).toContain('Not compliant error');
+
+    complianceSpy.mockRestore();
+  });
+
+  it('should handle optimizer errors gracefully', async () => {
+    const optimizerModule = await import('@mindfiredigital/adac-optimizer');
+    const analyzeSpy = vi
+      .spyOn(optimizerModule.OptimizerEngine.prototype, 'analyze')
+      .mockImplementation(() => {
+        throw new Error('Fake optimizer error');
+      });
+
+    const result = await generateDiagramSvg(validYaml);
+    expect(
+      result.logs.some((l) =>
+        l.includes('Optimizer error: Fake optimizer error')
+      )
+    ).toBe(true);
+
+    analyzeSpy.mockRestore();
+  });
+
+  it('should include optimization tooltips when recommendations exist', async () => {
+    const optimizerModule = await import('@mindfiredigital/adac-optimizer');
+    const analyzeSpy = vi
+      .spyOn(optimizerModule.OptimizerEngine.prototype, 'analyze')
+      .mockImplementation(() => {
+        return {
+          summary: {
+            total: 1,
+            critical: 0,
+            high: 1,
+            medium: 0,
+            low: 0,
+            totalEstimatedSavingsUsd: 10,
+          },
+          recommendations: [
+            {
+              category: 'cost',
+              title: 'Save money',
+              severity: 'high',
+              estimatedSavingsUsd: 10,
+            },
+          ],
+          byService: {
+            'vm-1': [
+              {
+                category: 'cost',
+                title: 'Save money',
+                severity: 'high',
+                estimatedSavingsUsd: 10,
+              },
+            ],
+          },
+        };
+      });
+
+    const result = await generateDiagramSvg(validYaml);
+    expect(result.svg).toContain('Est. Savings: $10.00/mo');
+    expect(result.svg).toContain('[HIGH] Save money');
+
+    analyzeSpy.mockRestore();
+  });
 });
 
 describe('ADAC Core Renderer', () => {
@@ -282,6 +378,7 @@ describe('ADAC Core Renderer', () => {
           id: 'e1',
           sources: ['n1'],
           targets: ['n1'],
+          labels: [{ text: 'HTTP Request' }],
           sections: [
             {
               id: 's1',
@@ -292,15 +389,23 @@ describe('ADAC Core Renderer', () => {
           ],
         },
         {
-          id: 'e2', // missing sections
+          id: 'e2', // missing sections originally, now vertical to test vertical label
           sources: ['n1'],
           targets: ['n1'],
-          sections: [],
+          labels: [{ text: 'Vertical' }],
+          sections: [
+            {
+              id: 's2',
+              startPoint: { x: 50, y: 25 },
+              endPoint: { x: 50, y: 200 },
+            },
+          ],
         },
         {
           id: 'e3', // no sections property
           sources: ['n1'],
           targets: ['n1'],
+          labels: [{ text: 'Missing Secs' }],
         },
       ],
     };
