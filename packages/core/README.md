@@ -7,7 +7,7 @@ Core integration package for ADAC — brings together parsing, validation, layou
 ## Features
 
 - 🎯 Unified orchestration of parsing, validation, and rendering
-- 🎨 Multiple layout engine support (ELK, Dagre, and Custom)
+- 🎨 Multiple layout engine support (ELK and Custom)
 - ✅ Compliance validation integration (auto-detected from YAML)
 - 🔍 **Architecture optimizer** — runs automatically, produces prioritised recommendations
 - 📦 Zero external runtime dependencies (bundled)
@@ -72,9 +72,6 @@ const result = await generateDiagramSvg(
 // ELK (professional layout — recommended for complex diagrams)
 const resultElk = await generateDiagramSvg(yaml, 'elk');
 
-// Dagre (lightweight — good for simple hierarchies)
-const resultDagre = await generateDiagramSvg(yaml, 'dagre');
-
 // Custom (user-defined layout algorithm)
 const resultCustom = await generateDiagramSvg(yaml, 'custom');
 ```
@@ -99,7 +96,7 @@ Generates an SVG diagram from YAML content. Runs compliance checks and the archi
 | Parameter       | Type                                           | Default     | Description                              |
 | --------------- | ---------------------------------------------- | ----------- | ---------------------------------------- |
 | `yaml`          | `string`                                       | —           | ADAC YAML configuration content          |
-| `layoutEngine`  | `'elk' \| 'dagre' \| 'custom'`                 | `'elk'`     | Graph layout algorithm                   |
+| `layoutEngine`  | `'elk' \| 'custom'`                            | `'elk'`     | Graph layout algorithm                   |
 | `validate`      | `boolean`                                      | `false`     | Run schema validation before layout      |
 | `costData`      | `Record<string, number>`                       | —           | Per-service cost overrides (optional)    |
 | `period`        | `'hourly' \| 'daily' \| 'monthly' \| 'yearly'` | `'monthly'` | Cost display period                      |
@@ -130,7 +127,6 @@ File-based wrapper around `generateDiagramSvg`. Reads the YAML from `input` and 
 export { parseAdac, parseAdacFromContent } from '@mindfiredigital/adac-parser';
 export { validateAdacConfig } from '@mindfiredigital/adac-schema';
 export { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
-export { layoutDagre } from '@mindfiredigital/adac-layout-dagre';
 ```
 
 ## Generation pipeline

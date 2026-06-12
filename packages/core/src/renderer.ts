@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import ELK from 'elkjs';
 import { type ElkNode, type ElkEdge } from '@mindfiredigital/adac-layout-elk';
-import { layoutDagre } from '@mindfiredigital/adac-layout-dagre';
+
 import { createLayoutEngine } from '@mindfiredigital/adac-layout';
 import { routeAStar } from './routing';
 
@@ -413,7 +413,7 @@ function calculateLabelDimensions(
 
 export async function renderSvg(
   graph: ElkNode,
-  layoutEngine: 'elk' | 'dagre' | 'custom' = 'elk',
+  layoutEngine: 'elk' | 'custom' = 'elk',
   complianceTooltipMap?: Record<
     string,
     { frameworks: string[]; violations: string[] }
@@ -843,8 +843,6 @@ export async function renderSvg(
 
     // Attach routed edges at the root level
     layout.edges = routedEdges;
-  } else if (layoutEngine === 'dagre') {
-    layout = await layoutDagre(graph);
   } else {
     const elk = new ELK();
     layout = (await elk.layout(graph)) as ElkNode;

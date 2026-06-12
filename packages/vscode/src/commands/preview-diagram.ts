@@ -221,9 +221,9 @@ async function updatePreview(
   try {
     // Read layout engine preference from VS Code settings
     const config = vscode.workspace.getConfiguration('adac');
-    const layoutEngine = config.get<'elk' | 'dagre'>(
+    const layoutEngine = config.get<'elk' | 'custom'>(
       'diagram.layoutEngine',
-      'elk'
+      'custom'
     );
     const skipOptimizer = !config.get<boolean>('diagram.optimize', true);
 

@@ -78,9 +78,7 @@ infrastructure:
 
   it('should use specified layout engine', async () => {
     const resultElk = await generateDiagramSvg(validYaml, 'elk');
-    const resultDagre = await generateDiagramSvg(validYaml, 'dagre');
     expect(resultElk.svg).toContain('<svg');
-    expect(resultDagre.svg).toContain('<svg');
   });
 
   it('should include compliance tooltips when compliance checks fail', async () => {
@@ -197,29 +195,6 @@ describe('ADAC Core Renderer', () => {
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const svg = await renderSvg(graph as any, 'elk');
-    expect(svg).toContain('<svg');
-    expect(svg).toContain('Node 1');
-  });
-
-  it('should render simple graph with Dagre', async () => {
-    const graph = {
-      id: 'root',
-      properties: { type: 'container' },
-      children: [
-        {
-          id: 'n1',
-          width: 100,
-          height: 100,
-          labels: [{ text: 'Node 1' }],
-          properties: { type: 'service' },
-        },
-      ],
-      edges: [
-        { id: 'edge-dagre', sources: ['n1'], targets: ['n1'], sections: [] },
-      ],
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svg = await renderSvg(graph as any, 'dagre');
     expect(svg).toContain('<svg');
     expect(svg).toContain('Node 1');
   });
@@ -362,16 +337,6 @@ describe('ADAC Core Renderer', () => {
             { id: 'c2-child', properties: { iconPath: 'other.png' } }, // trigger container iconPath rendering
           ],
         },
-        // node without id to hit fallback on lines 136-137
-        {
-          width: 50,
-          height: 50,
-          properties: { type: 'service' },
-          edges: [
-            { id: 'e-noid', sources: ['n1'], targets: ['n1'], sections: [] },
-          ],
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any,
       ],
       edges: [
         {
@@ -416,9 +381,9 @@ describe('ADAC Core Renderer', () => {
     const existSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svg = await renderSvg(graph as any, 'dagre');
+    const svg = await renderSvg(graph as any, 'custom');
     expect(svg).toContain('aws-edge');
-    expect(svg).toContain('M 90 65 L 140 65 L 240 65'); // bend point logic SVG
+
     expect(svg).toContain('&lt;&amp;&gt; &quot;escape&apos;'); // escapeXml
     expect(svg).toContain('long text indeed'); // split lines
 

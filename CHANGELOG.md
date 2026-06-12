@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial monorepo setup with 23 packages
 - Core diagram generation engine
 - CLI interface for ADAC
-- Multiple layout engines (ELK and Dagre)
+- Multiple layout engines (ELK and Custom)
 - AWS, GCP, and Azure icon support
 - Compliance framework validation (PCI-DSS, SOC2, HIPAA)
 - Cost analysis capabilities
@@ -73,7 +73,7 @@ For detailed changes in specific packages, refer to:
 - [adac-compliance CHANGELOG](packages/compliance/CHANGELOG.md)
 - [adac-cost CHANGELOG](packages/cost/CHANGELOG.md)
 - [adac-layout-elk CHANGELOG](packages/layout-elk/CHANGELOG.md)
-- [adac-layout-dagre CHANGELOG](packages/layout-dagre/CHANGELOG.md)
+
 - [adac-web CHANGELOG](packages/web/CHANGELOG.md)
 - [adac-web-server CHANGELOG](packages/web-server/CHANGELOG.md)
 

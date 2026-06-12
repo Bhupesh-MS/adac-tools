@@ -57,7 +57,6 @@ const layout = await layoutWithELK(graph, options);
 
 ## See Also
 
-- [@mindfiredigital/adac-layout-dagre](../layout-dagre) - Lightweight alternative
 - [@mindfiredigital/adac-layout-core](../layout-core) - Layout interfaces
 - [@mindfiredigital/adac-core](../core) - Core integration
 

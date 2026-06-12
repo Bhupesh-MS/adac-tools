@@ -95,7 +95,6 @@ const engine = new CustomLayoutEngine({
 
 - [@mindfiredigital/adac-layout](../layout) - Layout orchestration
 - [@mindfiredigital/adac-layout-elk](../layout-elk) - ELK implementation
-- [@mindfiredigital/adac-layout-dagre](../layout-dagre) - Dagre implementation
 
 ## License
 

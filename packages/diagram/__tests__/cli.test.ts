@@ -146,7 +146,7 @@ describe('cli.ts', () => {
     await runCLIArg.generateDiagram(
       'in.yaml',
       'out.png',
-      'dagre',
+      'elk',
       false,
       undefined,
       'hourly'

@@ -30,7 +30,7 @@ module.exports = {
         'adac-layout',
         'adac-layout-core',
         'adac-layout-elk',
-        'adac-layout-dagre',
+
         'adac-icons-aws',
         'adac-icons-gcp',
         'adac-icons-azure',

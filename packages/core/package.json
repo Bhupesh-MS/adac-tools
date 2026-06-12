@@ -28,10 +28,9 @@
   "devDependencies": {
     "@mindfiredigital/adac-compliance": "workspace:*",
     "@mindfiredigital/adac-layout": "workspace:*",
-    "@mindfiredigital/adac-optimizer": "workspace:*",
     "@mindfiredigital/adac-layout-core": "workspace:*",
-    "@mindfiredigital/adac-layout-dagre": "workspace:*",
     "@mindfiredigital/adac-layout-elk": "workspace:*",
+    "@mindfiredigital/adac-optimizer": "workspace:*",
     "@mindfiredigital/adac-parser": "workspace:*",
     "@mindfiredigital/adac-schema": "workspace:*",
     "tsup": "^8.3.5",

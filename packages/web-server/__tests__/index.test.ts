@@ -629,7 +629,7 @@ describe('Web Server API', () => {
 
       const res = await mockRequest('POST', '/api/generate', {
         content: adacContent,
-        layout: 'dagre',
+        layout: 'custom',
       });
 
       expect([200, 500]).toContain(res.status);

@@ -129,10 +129,10 @@
         },
         "adac.diagram.layoutEngine": {
           "type": "string",
-          "default": "elk",
+          "default": "custom",
           "enum": [
             "elk",
-            "dagre"
+            "custom"
           ],
           "description": "Layout engine for diagram preview"
         }

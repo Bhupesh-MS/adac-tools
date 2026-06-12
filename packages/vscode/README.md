@@ -89,7 +89,7 @@ Every diagram preview includes an **Optimizer** panel below the diagram that aut
 | `adac.validation.onSave`    | `true`  | Validate on file save                       |
 | `adac.validation.onType`    | `true`  | Validate as you type                        |
 | `adac.diagram.theme`        | `auto`  | Diagram theme (auto/light/dark)             |
-| `adac.diagram.layoutEngine` | `elk`   | Layout engine (elk/dagre/custom)            |
+| `adac.diagram.layoutEngine` | `elk`   | Layout engine (elk/custom)                  |
 | `adac.diagram.optimize`     | `true`  | Run architecture optimizer on every preview |
 
 ## Getting Started

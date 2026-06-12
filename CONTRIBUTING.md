@@ -150,7 +150,7 @@ The scope must be a **package name** without the `@mindfiredigital/` prefix:
 - `adac-schema`
 - `adac-layout`
 - `adac-layout-elk`
-- `adac-layout-dagre`
+
 - `adac-layout-core`
 - `adac-icons-aws`
 - `adac-icons-gcp`

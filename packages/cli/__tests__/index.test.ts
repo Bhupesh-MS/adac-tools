@@ -232,8 +232,8 @@ describe('CLI', () => {
       expect(fn).toHaveBeenCalled();
     });
 
-    it('should support both elk and dagre layout engines', async () => {
-      const layouts: ('elk' | 'dagre')[] = ['elk', 'dagre'];
+    it('should support both elk and custom layout engines', async () => {
+      const layouts: ('elk' | 'custom')[] = ['elk', 'custom'];
 
       for (const layout of layouts) {
         const fn = mockCLIOptions.generateDiagram;

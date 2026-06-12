@@ -47,7 +47,7 @@
     },
     "layout": {
       "type": "string",
-      "enum": ["elk", "dagre"],
+      "enum": ["elk", "custom"],
       "description": "Layout engine for the diagram"
     }
   },

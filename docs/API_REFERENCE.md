@@ -43,7 +43,6 @@ The root object for an architecture definition.
 ### Layouts
 
 - **ELK** (`@mindfiredigital/adac-layout-elk`): `buildElkGraph(adac): ElkNode`
-- **Dagre** (`@mindfiredigital/adac-layout-dagre`): `layoutDagre(graph): Promise<ElkNode>`
 
 ---
 
@@ -56,7 +55,7 @@ Generates an SVG diagram from YAML content. Runs compliance checks and the archi
 | Parameter       | Type                     | Default     | Description                   |
 | --------------- | ------------------------ | ----------- | ----------------------------- |
 | `yaml`          | `string`                 | —           | ADAC YAML content             |
-| `layoutEngine`  | `'elk' \| 'dagre'`       | `'elk'`     | Graph layout algorithm        |
+| `layoutEngine`  | `'elk' \| 'custom'`      | `'elk'`     | Graph layout algorithm        |
 | `validate`      | `boolean`                | `false`     | Validate schema before layout |
 | `costData`      | `Record<string, number>` | —           | Per-service cost overrides    |
 | `period`        | `string`                 | `'monthly'` | Cost display period           |
@@ -90,7 +89,7 @@ File-based wrapper. Reads YAML from `input` and writes SVG to `output`.
 
 ```
 adac diagram <file>   Generate SVG diagram
-  -l, --layout <type>     elk | dagre (default: elk)
+  -l, --layout <type>     elk | custom (default: elk)
   -o, --output <path>     Output SVG path
   --validate              Run schema validation
   --cost                  Print cost breakdown
