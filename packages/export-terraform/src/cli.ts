@@ -1,53 +1,48 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { Command } from 'commander';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { runCLI, type CLIOptions } from '@mindfiredigital/adac-cli';
+import fs from 'fs';
 import { generateTerraformFromAdacFile } from './terraform-generator.js';
 
-// Read version from package.json
-const currentDir = fileURLToPath(new URL('.', import.meta.url));
-const pkgPath = path.resolve(currentDir, '../package.json');
-let version = '0.0.1';
-try {
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-  version = pkg.version;
-} catch (error) {
-  console.warn(`Failed to read package version from ${pkgPath}`, error);
-  // Fallback version when package.json can't be read
-}
+const program = new Command();
 
-function unavailable(command: string): never {
-  throw new Error(`${command} is not available in this build.`);
-}
+program
+  .name('adac-export-terraform')
+  .description('Export ADAC diagrams to Terraform HCL files')
+  .argument('<file>', 'Path to ADAC YAML file')
+  .option('-o, --output <dir>', 'Output directory for Terraform files')
+  .option('--no-validate', 'Skip schema validation')
+  .action(async (file, opts) => {
+    try {
+      const inputPath = path.resolve(process.cwd(), file);
+      const validate = opts.validate !== false;
 
-const cliOptions = {
-  generateDiagram: async () => {
-    unavailable('Diagram generation');
-  },
-  parseAdac: () => unavailable('ADAC parsing'),
-  validateAdacConfig: () => unavailable('ADAC validation'),
-  generateTerraformFromYaml: async (
-    input: string,
-    outputDir?: string,
-    validate?: boolean
-  ) => {
-    const result = generateTerraformFromAdacFile(input, {
-      validate: validate ?? true,
-    });
+      console.log(`Generating Terraform HCL from ${inputPath}...`);
 
-    const parsed = path.parse(input);
-    const targetDir =
-      outputDir ?? path.resolve(parsed.dir, `${parsed.name}-terraform`);
+      const result = await generateTerraformFromAdacFile(inputPath, {
+        validate,
+      });
 
-    mkdirSync(targetDir, { recursive: true });
-    writeFileSync(path.join(targetDir, 'main.tf'), result.mainTf);
-    writeFileSync(path.join(targetDir, 'variables.tf'), result.variablesTf);
-    writeFileSync(path.join(targetDir, 'outputs.tf'), result.outputsTf);
+      if (opts.output) {
+        const outputDir = path.resolve(process.cwd(), opts.output);
+        if (!fs.existsSync(outputDir)) {
+          fs.mkdirSync(outputDir, { recursive: true });
+        }
 
-    console.log(`Terraform files written to ${targetDir}`);
-  },
-  version,
-} satisfies CLIOptions;
+        const parsedPath = path.parse(inputPath);
+        const outFilePath = path.join(outputDir, `${parsedPath.name}.tf`);
+        fs.writeFileSync(outFilePath, result.mainTf);
+        console.log(`✅ Terraform HCL saved to ${outFilePath}`);
+      } else {
+        console.log('\n--- Terraform HCL ---\n');
+        console.log(result.mainTf);
+        console.log('\n---------------------\n');
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Error generating Terraform HCL:', message);
+      process.exit(1);
+    }
+  });
 
-runCLI(cliOptions);
+program.parse(process.argv);

@@ -1,4 +1,4 @@
-import type { AdacConfig } from '@mindfiredigital/adac-schema';
+import type { AdacConfig } from '..';
 import type {
   OptimizationRecommendation,
   OptimizationResult,
@@ -6,10 +6,10 @@ import type {
   ServiceOptimizationMap,
   OptimizerOptions,
   OptimizationSeverity,
-} from './types/index.js';
-import { runCostRules } from './rules/cost-rules.js';
-import { runSecurityRules } from './rules/security-rules.js';
-import { runReliabilityRules } from './rules/reliability-rules.js';
+} from './types/index';
+import { runCostRules } from './rules/cost-rules';
+import { runSecurityRules } from './rules/security-rules';
+import { runReliabilityRules } from './rules/reliability-rules';
 
 const SEVERITY_ORDER: OptimizationSeverity[] = [
   'critical',

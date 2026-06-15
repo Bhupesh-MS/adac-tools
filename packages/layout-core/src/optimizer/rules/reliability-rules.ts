@@ -1,4 +1,4 @@
-import type { AdacConfig, AdacService } from '@mindfiredigital/adac-schema';
+import type { AdacConfig, AdacService } from '../..';
 import type { OptimizationRecommendation } from '../types/index.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

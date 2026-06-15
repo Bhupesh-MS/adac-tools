@@ -3,7 +3,7 @@ import {
   AdacService,
   AdacApplication,
   AdacCloud,
-} from '@mindfiredigital/adac-schema';
+} from '@mindfiredigital/adac-layout-core';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ElkNode, ElkEdge } from './types.js';
 import path from 'path';

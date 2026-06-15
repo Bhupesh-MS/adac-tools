@@ -1,4 +1,4 @@
-import { AdacConfig, AdacService } from '@mindfiredigital/adac-schema';
+import { AdacConfig, AdacService } from '@mindfiredigital/adac-layout-core';
 import { ComplianceResult, Violation } from './types';
 import { getRulesForFramework } from './frameworks';
 

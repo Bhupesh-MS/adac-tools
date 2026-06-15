@@ -1,8 +1,8 @@
-import type { AdacConfig } from '@mindfiredigital/adac-schema';
-import { OptimizerEngine } from './optimizer.js';
-import type { OptimizerOptions, OptimizationResult } from './types/index.js';
+import type { AdacConfig } from '..';
+import { OptimizerEngine } from './optimizer';
+import type { OptimizerOptions, OptimizationResult } from './types/index';
 
-export { OptimizerEngine } from './optimizer.js';
+export { OptimizerEngine } from './optimizer';
 export type {
   OptimizationRecommendation,
   OptimizationResult,
@@ -11,7 +11,7 @@ export type {
   OptimizationSeverity,
   OptimizerOptions,
   ServiceOptimizationMap,
-} from './types/index.js';
+} from './types/index';
 
 export function analyzeOptimizations(
   config: AdacConfig,

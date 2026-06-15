@@ -261,7 +261,7 @@ export function wrapSvgInHtml(
   svg: string,
   logs: string[],
   durationMs: number,
-  optimizationResult?: import('@mindfiredigital/adac-optimizer').OptimizationResult
+  optimizationResult?: import('@mindfiredigital/adac-layout-core').OptimizationResult
 ): string {
   const logsHtml = logs
     .map((l) => `<div class="log-line">${escapeHtml(l)}</div>`)
