@@ -1,6 +1,6 @@
 import Ajv from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import schema from './adac.schema.json' with { type: 'json' };
+import schema from './adac.schema.json';
 import { AdacConfig } from './types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

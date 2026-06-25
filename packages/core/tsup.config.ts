@@ -12,14 +12,14 @@ export default defineConfig({
   // Bundle internal workspace packages and key external dependencies
   noExternal: [
     '@mindfiredigital/adac-parser',
-    '@mindfiredigital/adac-schema',
+    '@mindfiredigital/adac-layout-core',
     '@mindfiredigital/adac-layout-elk',
 
     '@mindfiredigital/adac-layout-core',
     '@mindfiredigital/adac-layout',
     '@mindfiredigital/adac-compliance',
     '@mindfiredigital/adac-cost',
-    '@mindfiredigital/adac-optimizer',
+    '@mindfiredigital/adac-layout-core',
     'elkjs',
     'fs-extra',
   ],

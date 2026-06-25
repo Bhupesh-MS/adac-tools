@@ -22,14 +22,18 @@
     "url": "https://github.com/mindfiredigital/adac-tools.git",
     "directory": "packages/export-k8s"
   },
+  "bin": {
+    "adac-export-k8s": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
   },
   "dependencies": {
     "@mindfiredigital/adac-parser": "workspace:*",
-    "@mindfiredigital/adac-schema": "workspace:*",
-    "js-yaml": "^4.1.1"
+    "@mindfiredigital/adac-layout-core": "workspace:*",
+    "js-yaml": "^4.1.1",
+    "commander": "^12.0.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

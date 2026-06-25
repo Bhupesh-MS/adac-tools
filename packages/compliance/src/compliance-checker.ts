@@ -1,4 +1,4 @@
-import { AdacConfig } from '@mindfiredigital/adac-schema';
+import { AdacConfig } from '@mindfiredigital/adac-layout-core';
 import { RuleEvaluator, ServiceComplianceMap } from './evaluator';
 import { RemediationEngine } from './remediation/remediation-engine';
 import { ComplianceResult } from './types';

@@ -1,4 +1,4 @@
-import type { AdacConfig } from '@mindfiredigital/adac-schema';
+import type { AdacConfig } from '@mindfiredigital/adac-layout-core';
 
 export const awsServerlessApi: AdacConfig = {
   version: '0.1',

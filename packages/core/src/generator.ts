@@ -1,12 +1,12 @@
 import fs from 'fs-extra';
 import { parseAdacFromContent } from '@mindfiredigital/adac-parser';
 import { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
-import { validateAdacConfig } from '@mindfiredigital/adac-schema';
+import { validateAdacConfig } from '@mindfiredigital/adac-layout-core';
 import { ComplianceChecker } from '@mindfiredigital/adac-compliance';
 import {
   OptimizerEngine,
   type OptimizationResult,
-} from '@mindfiredigital/adac-optimizer';
+} from '@mindfiredigital/adac-layout-core';
 import { renderSvg } from './renderer.js';
 
 type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';

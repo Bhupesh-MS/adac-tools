@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { requireLeastPrivilegeRule } from '../../src/rules/access-control-rules';
-import { AdacConfig } from '@mindfiredigital/adac-schema';
+import { AdacConfig } from '@mindfiredigital/adac-layout-core';
 
 type AdacService = AdacConfig['infrastructure']['clouds'][0]['services'][0];
 

@@ -3,5 +3,5 @@ export * from './renderer.js';
 
 // Re-export key functions from sub-packages for convenience
 export { parseAdac, parseAdacFromContent } from '@mindfiredigital/adac-parser';
-export { validateAdacConfig } from '@mindfiredigital/adac-schema';
+export { validateAdacConfig } from '@mindfiredigital/adac-layout-core';
 export { buildElkGraph } from '@mindfiredigital/adac-layout-elk';

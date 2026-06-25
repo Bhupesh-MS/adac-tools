@@ -1,6 +1,9 @@
 import yaml from 'js-yaml';
 import { parseAdac } from '@mindfiredigital/adac-parser';
-import type { AdacConfig, AdacService } from '@mindfiredigital/adac-schema';
+import type {
+  AdacConfig,
+  AdacService,
+} from '@mindfiredigital/adac-layout-core';
 import {
   createConfigMapManifest,
   createSecretManifest,
