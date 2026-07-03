@@ -59,44 +59,45 @@ function loadIconMap(provider: IconProvider): Record<string, string> {
   return {};
 }
 
-function assetCandidates(
-  provider: IconProvider,
-  relativePath: string
-): string[] {
-  const folder = PROVIDER_FOLDERS[provider];
-  return [
-    // dist/assets — only AWS historically shipped icons inside the package
-    path.resolve(__dirname, 'assets', relativePath),
-    path.resolve(__dirname, '..', '..', folder, 'assets', relativePath),
-    path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      '@mindfiredigital',
-      `adac-${folder}`,
-      'assets',
-      relativePath
-    ),
-    path.resolve(process.cwd(), 'packages', folder, 'assets', relativePath),
-    path.resolve(process.cwd(), folder, 'assets', relativePath),
-    path.resolve(process.cwd(), 'assets', relativePath),
-  ];
-}
+// function assetCandidates(
+//   provider: IconProvider,
+//   relativePath: string
+// ): string[] {
+//   const folder = PROVIDER_FOLDERS[provider];
+//   return [
+//     // dist/assets — only AWS historically shipped icons inside the package
+//     path.resolve(__dirname, 'assets', relativePath),
+//     path.resolve(__dirname, '..', '..', folder, 'assets', relativePath),
+//     path.resolve(
+//       __dirname,
+//       '..',
+//       '..',
+//       '..',
+//       '@mindfiredigital',
+//       `adac-${folder}`,
+//       'assets',
+//       relativePath
+//     ),
+//     path.resolve(process.cwd(), 'packages', folder, 'assets', relativePath),
+//     path.resolve(process.cwd(), folder, 'assets', relativePath),
+//     path.resolve(process.cwd(), 'assets', relativePath),
+//   ];
+// }
 
 function resolveProviderAssetPath(
   provider: IconProvider,
   relativePath?: string
 ): string | undefined {
-  if (!relativePath) return undefined;
-  for (const p of assetCandidates(provider, relativePath)) {
-    if (fs.existsSync(p)) return p;
-  }
-  console.warn(
-    `Could not resolve ${provider.toUpperCase()} icon path:`,
-    relativePath
-  );
-  return undefined;
+  // if (!relativePath) return undefined;
+  return relativePath;
+  // for (const p of assetCandidates(provider, relativePath)) {
+  //   if (fs.existsSync(p)) return p;
+  // }
+  // console.warn(
+  //   `Could not resolve ${provider.toUpperCase()} icon path:`,
+  //   relativePath
+  // );
+  // return undefined;
 }
 
 const ICON_MAP: Record<string, string> = loadIconMap('aws');
