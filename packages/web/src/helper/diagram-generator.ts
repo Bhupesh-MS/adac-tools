@@ -1,4 +1,4 @@
-import { generateDiagramSvg } from '@mindfiredigital/adac-diagram';
+import { generateDiagramSvg } from '@mindfiredigital/adac-core';
 // import { makeFetchIconResolver } from '@mindfiredigital/adac-core/icon-resolver-browser';
 // const iconResolver = makeFetchIconResolver('/assets');
 export async function generateDiagramBrowser(

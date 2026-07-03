@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@mindfiredigital/adac-diagram": "workspace:*",
+    "@mindfiredigital/adac-core": "workspace:*",
     "@xyflow/react": "^12.0.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.0.0",
