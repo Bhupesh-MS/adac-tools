@@ -4,7 +4,7 @@
   "description": "Express API server for ADAC diagram generation and compliance services",
   "author": "Mindfire Digital",
   "license": "MIT",
-  "main": "dist/index.cjs",
+  "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "keywords": [
