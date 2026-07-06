@@ -1,4 +1,3 @@
-import fs from 'fs-extra';
 import { parseAdacFromContent } from '@mindfiredigital/adac-parser';
 import { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
 import { validateAdacConfig } from '@mindfiredigital/adac-layout-core';
@@ -26,7 +25,8 @@ export async function generateDiagramSvg(
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
-  skipOptimizer: boolean = false
+  skipOptimizer: boolean = false,
+  iconResolver?: (iconName: string) => Promise<string | null>
 ): Promise<GenerationResult> {
   const logs: string[] = [];
   const start = Date.now();
@@ -68,7 +68,7 @@ export async function generateDiagramSvg(
       }
     }
 
-    const graph = buildElkGraph(adac);
+    const graph = await buildElkGraph(adac);
     const engine = layoutOverride || adac.layout || 'custom';
     const checker = new ComplianceChecker();
     const { byService } = checker.checkCompliance(adac);
@@ -119,7 +119,8 @@ export async function generateDiagramSvg(
       complianceTooltipMap,
       optimizationTooltipMap,
       costData,
-      period
+      period,
+      iconResolver
     );
 
     const duration = Date.now() - start;
@@ -144,6 +145,7 @@ export async function generateDiagram(
   period: CostPeriod = 'monthly',
   skipOptimizer: boolean = false
 ): Promise<void> {
+  const fs = await import('fs-extra');
   const raw = await fs.readFile(input, 'utf8');
   const { svg } = await generateDiagramSvg(
     raw,

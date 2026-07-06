@@ -1,4 +1,4 @@
-import fs from 'fs-extra';
+// import fs from 'fs-extra';
 import ELK from 'elkjs';
 import { type ElkNode, type ElkEdge } from '@mindfiredigital/adac-layout-elk';
 
@@ -411,6 +411,48 @@ function calculateLabelDimensions(
   return { displayLabel, actualLabelW };
 }
 
+function getUniqueIconPaths(root: ElkNode): string[] {
+  const iconPaths = new Set<string>();
+
+  function traverse(node: ElkNode): void {
+    const iconPath = node.properties?.iconPath;
+
+    if (iconPath) {
+      iconPaths.add(iconPath);
+    }
+
+    for (const child of node.children ?? []) {
+      traverse(child);
+    }
+  }
+
+  traverse(root);
+
+  return [...iconPaths];
+}
+
+async function buildIconDataUriMap(
+  iconPaths: string[],
+  iconResolver: (path: string) => Promise<string | null>
+): Promise<Map<string, string>> {
+  const iconMap = new Map<string, string>();
+  await Promise.all(
+    iconPaths.map(async (path) => {
+      try {
+        const dataUri = await iconResolver(path);
+
+        if (dataUri) {
+          iconMap.set(path, dataUri);
+        }
+      } catch (e) {
+        console.warn(`Failed to resolve icon: ${path}`, e);
+      }
+    })
+  );
+
+  return iconMap;
+}
+
 export async function renderSvg(
   graph: ElkNode,
   layoutEngine: 'elk' | 'custom' = 'elk',
@@ -420,7 +462,8 @@ export async function renderSvg(
   >,
   optimizationTooltipMap?: Record<string, { recommendations: string[] }>,
   perServiceCosts?: Record<string, number>,
-  period: 'hourly' | 'daily' | 'monthly' | 'yearly' = 'monthly'
+  period: 'hourly' | 'daily' | 'monthly' | 'yearly' = 'monthly',
+  iconResolver?: (iconName: string) => Promise<string | null>
 ): Promise<string> {
   let layout: ElkNode;
   const allNodeBoxes: {
@@ -913,16 +956,29 @@ export async function renderSvg(
   const width = layout.width || 800;
   const height = layout.height || 600;
 
-  const getIconDataUri = (params: { path?: string }) => {
-    if (!params.path || !fs.existsSync(params.path)) return null;
+  let iconDataUriMap: Map<string, string>;
+
+  if (iconResolver) {
+    const uniqueIconPaths = getUniqueIconPaths(graph);
+    iconDataUriMap = await buildIconDataUriMap(uniqueIconPaths, iconResolver);
+  }
+
+  const getIconDataUri = async (params: { path?: string }) => {
     try {
-      const data = fs.readFileSync(params.path);
-      const b64 = data.toString('base64');
-      const ext = params.path.split('.').pop()?.toLowerCase();
-      let mime = 'image/svg+xml';
-      if (ext === 'png') mime = 'image/png';
-      else if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
-      return `data:${mime};base64,${b64}`;
+      if (!params.path) return null;
+      if (iconResolver) return iconDataUriMap.get(params.path) || null;
+      else {
+        const fs = await import('fs-extra');
+        if (!fs.existsSync(params.path)) return null;
+        const data = fs.readFileSync(params.path);
+        if (!data) return null;
+        const b64 = data.toString('base64');
+        const ext = params.path.split('.').pop()?.toLowerCase();
+        let mime = 'image/svg+xml';
+        if (ext === 'png') mime = 'image/png';
+        else if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+        return `data:${mime};base64,${b64}`;
+      }
     } catch (e) {
       console.warn(`Failed to read icon: ${params.path}`, e);
       return null;
@@ -1285,7 +1341,11 @@ export async function renderSvg(
     return perServiceCosts[id];
   };
 
-  const renderNode = (node: ElkNode, offsetX = 0, offsetY = 0): string => {
+  const renderNode = async (
+    node: ElkNode,
+    offsetX = 0,
+    offsetY = 0
+  ): Promise<string> => {
     const nx = node.x || 0,
       ny = node.y || 0,
       nw = node.width || 0,
@@ -1397,7 +1457,7 @@ export async function renderSvg(
 
       // 4. Provider icon (top-right corner, 20×20)
       if (props.iconPath) {
-        const iconUri = getIconDataUri({ path: props.iconPath });
+        const iconUri = await getIconDataUri({ path: props.iconPath });
         if (iconUri) {
           output += `<image
             href="${iconUri}"
@@ -1459,7 +1519,7 @@ export async function renderSvg(
         rx="10" ry="10"/>`;
 
       // ── Icon ─────────────────────────────────────────────
-      const iconUri = getIconDataUri({ path: props.iconPath });
+      const iconUri = await getIconDataUri({ path: props.iconPath });
 
       if (iconUri) {
         // Icon background pill
@@ -1565,7 +1625,9 @@ export async function renderSvg(
           dominant-baseline="auto">${escapeXml(truncate(line2))}</text>`;
       }
     }
-    node.children?.forEach((c) => (output += renderNode(c, absX, absY)));
+    for (const c of node.children ?? []) {
+      output += await renderNode(c, absX, absY);
+    }
     output += '</g>';
     return output;
   };
@@ -1573,9 +1635,10 @@ export async function renderSvg(
   const provider = getProvider(layout);
   const rootRect = `<rect width="${width}" height="${height}" class="${provider}-root" />
                     <rect width="${width}" height="${height}" fill="url(#dotGrid)" pointer-events="none" />`;
-  const nodesOutput = (layout.children || [])
-    .map((n) => renderNode(n))
-    .join('');
+
+  const nodesOutput = (
+    await Promise.all((layout.children ?? []).map((n) => renderNode(n)))
+  ).join('');
 
   // ── Legend ──
   const renderLegend = () => {

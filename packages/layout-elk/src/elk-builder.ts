@@ -6,8 +6,9 @@ import {
 } from '@mindfiredigital/adac-layout-core';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ElkNode, ElkEdge } from './types.js';
-import path from 'path';
-import fs from 'fs';
+
+export const isBrowser =
+  typeof window !== 'undefined' && typeof document !== 'undefined';
 
 type IconProvider = 'aws' | 'gcp' | 'azure';
 
@@ -17,8 +18,9 @@ const PROVIDER_FOLDERS: Record<IconProvider, string> = {
   azure: 'icons-azure',
 };
 
-function iconMapCandidates(provider: IconProvider): string[] {
+async function iconMapCandidates(provider: IconProvider): Promise<string[]> {
   const folder = PROVIDER_FOLDERS[provider];
+  const path = await import('path');
   return [
     path.resolve(__dirname, '..', '..', folder, 'mappings', 'icon-map.json'),
     path.resolve(
@@ -42,9 +44,18 @@ function iconMapCandidates(provider: IconProvider): string[] {
   ];
 }
 
-function loadIconMap(provider: IconProvider): Record<string, string> {
+async function loadIconMap(
+  provider: IconProvider
+): Promise<Record<string, string>> {
   try {
-    for (const p of iconMapCandidates(provider)) {
+    if (isBrowser) {
+      const resp = await fetch(`/mappings/${provider}-icons.json`);
+      if (!resp.ok) return {};
+      return resp.json();
+    }
+
+    const fs = await import('fs');
+    for (const p of await iconMapCandidates(provider)) {
       if (fs.existsSync(p)) {
         return JSON.parse(fs.readFileSync(p, 'utf8'));
       }
@@ -59,50 +70,55 @@ function loadIconMap(provider: IconProvider): Record<string, string> {
   return {};
 }
 
-// function assetCandidates(
-//   provider: IconProvider,
-//   relativePath: string
-// ): string[] {
-//   const folder = PROVIDER_FOLDERS[provider];
-//   return [
-//     // dist/assets — only AWS historically shipped icons inside the package
-//     path.resolve(__dirname, 'assets', relativePath),
-//     path.resolve(__dirname, '..', '..', folder, 'assets', relativePath),
-//     path.resolve(
-//       __dirname,
-//       '..',
-//       '..',
-//       '..',
-//       '@mindfiredigital',
-//       `adac-${folder}`,
-//       'assets',
-//       relativePath
-//     ),
-//     path.resolve(process.cwd(), 'packages', folder, 'assets', relativePath),
-//     path.resolve(process.cwd(), folder, 'assets', relativePath),
-//     path.resolve(process.cwd(), 'assets', relativePath),
-//   ];
-// }
-
-function resolveProviderAssetPath(
+async function assetCandidates(
   provider: IconProvider,
-  relativePath?: string
-): string | undefined {
-  // if (!relativePath) return undefined;
-  return relativePath;
-  // for (const p of assetCandidates(provider, relativePath)) {
-  //   if (fs.existsSync(p)) return p;
-  // }
-  // console.warn(
-  //   `Could not resolve ${provider.toUpperCase()} icon path:`,
-  //   relativePath
-  // );
-  // return undefined;
+  relativePath: string
+): Promise<string[]> {
+  const path = await import('path');
+  const folder = PROVIDER_FOLDERS[provider];
+  return [
+    // dist/assets — only AWS historically shipped icons inside the package
+    path.resolve(__dirname, 'assets', relativePath),
+    path.resolve(__dirname, '..', '..', folder, 'assets', relativePath),
+    path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '@mindfiredigital',
+      `adac-${folder}`,
+      'assets',
+      relativePath
+    ),
+    path.resolve(process.cwd(), 'packages', folder, 'assets', relativePath),
+    path.resolve(process.cwd(), folder, 'assets', relativePath),
+    path.resolve(process.cwd(), 'assets', relativePath),
+  ];
 }
 
-const ICON_MAP: Record<string, string> = loadIconMap('aws');
-const GCP_ICON_MAP: Record<string, string> = loadIconMap('gcp');
-const AZURE_ICON_MAP: Record<string, string> = loadIconMap('azure');
+async function resolveProviderAssetPath(
+  provider: IconProvider,
+  relativePath?: string
+): Promise<string | undefined> {
+  if (!relativePath) return undefined;
+  if (isBrowser) return relativePath;
+
+  const fs = await import('fs');
+  for (const p of await assetCandidates(provider, relativePath)) {
+    if (fs.existsSync(p)) return p;
+  }
+  console.warn(
+    `Could not resolve ${provider.toUpperCase()} icon path:`,
+    relativePath
+  );
+  return undefined;
+}
+
+const ICON_MAP_PROMISE: Promise<Record<string, string>> = loadIconMap('aws');
+const GCP_ICON_MAP_PROMISE: Promise<Record<string, string>> =
+  loadIconMap('gcp');
+const AZURE_ICON_MAP_PROMISE: Promise<Record<string, string>> =
+  loadIconMap('azure');
 
 // ── Shared ELK layout option presets ────────────────────────────────────────
 // Increased and symmetric so labels at the top of containers have breathing
@@ -274,18 +290,6 @@ function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-// Pre-compute normalized map for fuzzy lookup (AWS)
-const NORMALIZED_MAP = new Map<string, string>();
-Object.keys(ICON_MAP).forEach((k) => {
-  NORMALIZED_MAP.set(normalizeKey(k), k);
-});
-
-// Pre-compute normalized map for fuzzy lookup (GCP)
-const GCP_NORMALIZED_MAP = new Map<string, string>();
-Object.keys(GCP_ICON_MAP).forEach((k) => {
-  GCP_NORMALIZED_MAP.set(normalizeKey(k), k);
-});
-
 // Manual aliases for common short codes to full AWS names (if not auto-resolved)
 const ALIASES: Record<string, string> = {
   ec2: 'Amazon Elastic Compute Cloud (Amazon EC2)',
@@ -404,10 +408,54 @@ const GCP_ALIASES: Record<string, string> = {
   storage: 'Cloud Storage',
 };
 
-export function buildElkGraph(
+// Pre-compute normalized map for fuzzy lookup (AWS)
+const NORMALIZED_MAP = new Map<string, string>();
+
+// Pre-compute normalized map for fuzzy lookup (GCP)
+const GCP_NORMALIZED_MAP = new Map<string, string>();
+
+let initializePromise:
+  | Promise<{
+      aws: Record<string, string>;
+      gcp: Record<string, string>;
+      azure: Record<string, string>;
+    }>
+  | undefined;
+
+function initializeIconMaps() {
+  if (!initializePromise) {
+    initializePromise = (async () => {
+      const [aws, gcp, azure] = await Promise.all([
+        ICON_MAP_PROMISE,
+        GCP_ICON_MAP_PROMISE,
+        AZURE_ICON_MAP_PROMISE,
+      ]);
+
+      for (const key of Object.keys(aws)) {
+        NORMALIZED_MAP.set(normalizeKey(key), key);
+      }
+
+      for (const key of Object.keys(gcp)) {
+        GCP_NORMALIZED_MAP.set(normalizeKey(key), key);
+      }
+
+      return { aws, gcp, azure };
+    })();
+  }
+
+  return initializePromise;
+}
+
+export async function buildElkGraph(
   adac: AdacConfig,
   options: BuildElkGraphOptions = {}
-): ElkNode {
+): Promise<ElkNode> {
+  const {
+    aws: ICON_MAP,
+    gcp: GCP_ICON_MAP,
+    azure: AZURE_ICON_MAP,
+  } = await initializeIconMaps();
+
   const nodesMap = new Map<string, ElkNode>();
   const edges: ElkEdge[] = [];
 
@@ -443,7 +491,7 @@ export function buildElkGraph(
         edgeNodeBetweenLayers: '60',
         edgeEdgeBetweenLayers: '30',
       };
-  const getIconPath = (
+  const getIconPath = async (
     key: string,
     forceProvider?: 'aws' | 'gcp' | 'azure'
   ) => {
@@ -452,68 +500,68 @@ export function buildElkGraph(
       forceProvider || (isAzure ? 'azure' : isGcp ? 'gcp' : 'aws');
 
     if (provider === 'gcp') {
-      return getGcpIconPath(key);
+      return await getGcpIconPath(key);
     }
     if (provider === 'azure') {
-      return getAzureIconPath(key);
+      return await getAzureIconPath(key);
     }
-    return getAwsIconPath(key);
+    return await getAwsIconPath(key);
   };
 
   // --- AWS Icon resolution ---
-  const getAwsIconPath = (key: string) => {
+  const getAwsIconPath = async (key: string) => {
     if (!key) return undefined;
 
     // 1. Direct Lookup
-    if (ICON_MAP[key]) return resolveAwsAssetPath(ICON_MAP[key]);
+    if (ICON_MAP[key]) return await resolveAwsAssetPath(ICON_MAP[key]);
 
     const lowerKey = normalizeKey(key);
 
     // 2. Alias Lookup
     if (ALIASES[lowerKey] && ICON_MAP[ALIASES[lowerKey]]) {
-      return resolveAwsAssetPath(ICON_MAP[ALIASES[lowerKey]]);
+      return await resolveAwsAssetPath(ICON_MAP[ALIASES[lowerKey]]);
     }
 
     // 3. Normalized Lookup
     if (NORMALIZED_MAP.has(lowerKey)) {
-      return resolveAwsAssetPath(ICON_MAP[NORMALIZED_MAP.get(lowerKey)!]);
+      return await resolveAwsAssetPath(ICON_MAP[NORMALIZED_MAP.get(lowerKey)!]);
     }
 
     // 4. Fuzzy / Substring Lookup
     for (const [nKey, originalKey] of NORMALIZED_MAP.entries()) {
       if (nKey.includes(lowerKey) || lowerKey.includes(nKey)) {
-        return resolveAwsAssetPath(ICON_MAP[originalKey]);
+        return await resolveAwsAssetPath(ICON_MAP[originalKey]);
       }
     }
 
     // 5. Fallback for generics
     if (lowerKey.includes('database') || lowerKey.includes('db'))
-      return resolveAwsAssetPath(ICON_MAP['AWS::RDS']);
+      return await resolveAwsAssetPath(ICON_MAP['AWS::RDS']);
     if (lowerKey.includes('user'))
-      return resolveAwsAssetPath(ICON_MAP['AWS::IAM::User']);
+      return await resolveAwsAssetPath(ICON_MAP['AWS::IAM::User']);
     if (lowerKey.includes('client'))
-      return resolveAwsAssetPath(ICON_MAP['AWS::IAM::User']);
+      return await resolveAwsAssetPath(ICON_MAP['AWS::IAM::User']);
 
     return undefined;
   };
 
   // --- GCP Icon resolution ---
-  const getGcpIconPath = (key: string) => {
+  const getGcpIconPath = async (key: string) => {
     if (!key) return undefined;
 
     // 1. Direct lookup in GCP map
-    if (GCP_ICON_MAP[key]) return resolveGcpAssetPath(GCP_ICON_MAP[key]);
+    if (GCP_ICON_MAP[key]) return await resolveGcpAssetPath(GCP_ICON_MAP[key]);
 
     const lowerKey = normalizeKey(key);
 
     // 2. GCP Alias lookup
     if (GCP_ALIASES[lowerKey] && GCP_ICON_MAP[GCP_ALIASES[lowerKey]]) {
-      return resolveGcpAssetPath(GCP_ICON_MAP[GCP_ALIASES[lowerKey]]);
+      return await resolveGcpAssetPath(GCP_ICON_MAP[GCP_ALIASES[lowerKey]]);
     }
 
     // 3. Normalized lookup
     if (GCP_NORMALIZED_MAP.has(lowerKey)) {
-      return resolveGcpAssetPath(
+      return await resolveGcpAssetPath(
         GCP_ICON_MAP[GCP_NORMALIZED_MAP.get(lowerKey)!]
       );
     }
@@ -521,7 +569,7 @@ export function buildElkGraph(
     // 4. Fuzzy / partial match
     for (const [nKey, originalKey] of GCP_NORMALIZED_MAP.entries()) {
       if (nKey.includes(lowerKey) || lowerKey.includes(nKey)) {
-        return resolveGcpAssetPath(GCP_ICON_MAP[originalKey]);
+        return await resolveGcpAssetPath(GCP_ICON_MAP[originalKey]);
       }
     }
 
@@ -529,36 +577,37 @@ export function buildElkGraph(
   };
 
   // --- Azure Icon resolution ---
-  const getAzureIconPath = (key: string) => {
+  const getAzureIconPath = async (key: string) => {
     if (!key) return undefined;
 
     // 1. Direct lookup in Azure map
-    if (AZURE_ICON_MAP[key]) return resolveAzureAssetPath(AZURE_ICON_MAP[key]);
+    if (AZURE_ICON_MAP[key])
+      return await resolveAzureAssetPath(AZURE_ICON_MAP[key]);
 
     const lowerKey = normalizeKey(key);
 
     // 2. Normalized lookup
     if (AZURE_ICON_MAP[lowerKey]) {
-      return resolveAzureAssetPath(AZURE_ICON_MAP[lowerKey]);
+      return await resolveAzureAssetPath(AZURE_ICON_MAP[lowerKey]);
     }
 
     // 3. Fuzzy / partial match
     for (const [originalKey, iconPath] of Object.entries(AZURE_ICON_MAP)) {
       const normalized = normalizeKey(originalKey);
       if (normalized.includes(lowerKey) || lowerKey.includes(normalized)) {
-        return resolveAzureAssetPath(iconPath);
+        return await resolveAzureAssetPath(iconPath);
       }
     }
 
     return undefined;
   };
 
-  const resolveAwsAssetPath = (relativePath?: string) =>
-    resolveProviderAssetPath('aws', relativePath);
-  const resolveGcpAssetPath = (relativePath?: string) =>
-    resolveProviderAssetPath('gcp', relativePath);
-  const resolveAzureAssetPath = (relativePath?: string) =>
-    resolveProviderAssetPath('azure', relativePath);
+  const resolveAwsAssetPath = async (relativePath?: string) =>
+    await resolveProviderAssetPath('aws', relativePath);
+  const resolveGcpAssetPath = async (relativePath?: string) =>
+    await resolveProviderAssetPath('gcp', relativePath);
+  const resolveAzureAssetPath = async (relativePath?: string) =>
+    await resolveProviderAssetPath('azure', relativePath);
 
   const getServiceType = (service: AdacService): string => {
     return service.service || service.subtype || service.type || 'unknown';
@@ -572,14 +621,14 @@ export function buildElkGraph(
   const isAzureCloud = (cloud: AdacCloud) =>
     (cloud.provider || '').toLowerCase() === 'azure';
 
-  const getProviderIconPath = (
+  const getProviderIconPath = async (
     key: string,
     isAzureProvider: boolean,
     isGcpProvider: boolean
   ) => {
-    if (isAzureProvider) return getAzureIconPath(key);
-    if (isGcpProvider) return getGcpIconPath(key);
-    return getAwsIconPath(key);
+    if (isAzureProvider) return await getAzureIconPath(key);
+    if (isGcpProvider) return await getGcpIconPath(key);
+    return await getAwsIconPath(key);
   };
 
   const isSubnetNode = (node: ElkNode) => {
@@ -598,10 +647,10 @@ export function buildElkGraph(
     return STYLES;
   };
 
-  const detectIconForApp = (app: AdacApplication) => {
+  const detectIconForApp = async (app: AdacApplication) => {
     // 1. Prefer AI Inference
     if (app.insight_tags?.icon) {
-      const p = getIconPath(app.insight_tags.icon);
+      const p = await getIconPath(app.insight_tags.icon);
       if (p) return p;
     }
 
@@ -612,41 +661,50 @@ export function buildElkGraph(
       tech.includes('vue') ||
       tech.includes('angular')
     )
-      return getIconPath('Front-End Web & Mobile');
+      return await getIconPath('Front-End Web & Mobile');
     if (
       tech.includes('node') ||
       tech.includes('java') ||
       tech.includes('python')
     )
-      return getIconPath('Compute');
+      return await getIconPath('Compute');
 
     // Generic type fallback mapping
     const type = (app.type || '').toLowerCase();
     if (type === 'frontend' || type === 'web' || type === 'ui') {
       return (
-        getIconPath('Front-End Web & Mobile') || getIconPath('Application')
+        (await getIconPath('Front-End Web & Mobile')) ||
+        (await getIconPath('Application'))
       );
     }
     if (type === 'backend' || type === 'api' || type === 'service') {
-      if (isGcp) return getGcpIconPath('cloud-run');
+      if (isGcp) return await getGcpIconPath('cloud-run');
       if (isAzure)
-        return getAzureIconPath('app-service') || getIconPath('Compute');
-      return getIconPath('Compute');
+        return (
+          (await getAzureIconPath('app-service')) ||
+          (await getIconPath('Compute'))
+        );
+      return await getIconPath('Compute');
     }
     if (type === 'worker' || type === 'job' || type === 'task') {
-      if (isGcp) return getGcpIconPath('cloud-functions');
+      if (isGcp) return await getGcpIconPath('cloud-functions');
       if (isAzure)
-        return getAzureIconPath('azure-functions') || getIconPath('Compute');
-      return getIconPath('Compute');
+        return (
+          (await getAzureIconPath('azure-functions')) ||
+          (await getIconPath('Compute'))
+        );
+      return await getIconPath('Compute');
     }
     if (type === 'database' || type === 'db') {
-      return getIconPath('database');
+      return await getIconPath('database');
     }
 
     // Fallbacks
     return (
-      getIconPath(app.type) ||
-      (isGcp ? getGcpIconPath('compute-engine') : getIconPath('Application'))
+      (await getIconPath(app.type)) ||
+      (isGcp
+        ? await getGcpIconPath('compute-engine')
+        : await getIconPath('Application'))
     );
   };
 
@@ -683,7 +741,8 @@ export function buildElkGraph(
   };
 
   // 1. Create Nodes for Applications
-  (adac.applications || []).forEach((app: AdacApplication) => {
+  for (const app of adac.applications || []) {
+    const iconPath = await detectIconForApp(app);
     const labelText = app.name || app.id;
     const dynamicW = calcNodeWidth(labelText);
     const node: ElkNode = {
@@ -693,14 +752,14 @@ export function buildElkGraph(
       labels: [{ text: labelText }],
       properties: {
         type: 'app',
-        iconPath: detectIconForApp(app),
+        iconPath,
         title: app.type,
         isStacked: app.type === 'cluster',
       },
       layoutOptions: buildLeafLayoutOptions(app.type || '', dynamicW, 100),
     };
     nodesMap.set(app.id, node);
-  });
+  }
 
   // 1.5 Create Nodes for Logical Groups
   const logicalGroups = new Set<string>();
@@ -737,12 +796,14 @@ export function buildElkGraph(
   });
 
   // 2. Create Nodes for Infrastructure Services (Pass 1)
-  (adac.infrastructure?.clouds || []).forEach((cloud: AdacCloud) => {
+  // (adac.infrastructure?.clouds || []).forEach((cloud: AdacCloud) => {
+  for (const cloud of adac.infrastructure?.clouds || []) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cloudStyles = getStylesForCloud(cloud) as any;
     const gcpCloud = isGcpCloud(cloud);
 
-    (cloud.services || []).forEach((service: AdacService) => {
+    // (cloud.services || []).forEach(async (service: AdacService) => {
+    for (const service of cloud.services || []) {
       let width = 80;
       let height = 100;
       let style: { type: string; style: string; cssClass?: string } =
@@ -839,10 +900,14 @@ export function buildElkGraph(
 
       // Icon Resolution strategy
       const isAzureProvider = isAzureCloud(cloud);
-      let iconPath = getProviderIconPath(typeKey, isAzureProvider, gcpCloud);
+      let iconPath = await getProviderIconPath(
+        typeKey,
+        isAzureProvider,
+        gcpCloud
+      );
 
       if (service.insight_tags?.icon) {
-        const aiIcon = getProviderIconPath(
+        const aiIcon = await getProviderIconPath(
           service.insight_tags.icon,
           isAzureProvider,
           gcpCloud
@@ -856,7 +921,7 @@ export function buildElkGraph(
           : gcpCloud
             ? 'compute-engine'
             : 'General resource icon';
-        iconPath = getProviderIconPath(
+        iconPath = await getProviderIconPath(
           fallbackIconKey,
           isAzureProvider,
           gcpCloud
@@ -910,8 +975,8 @@ export function buildElkGraph(
           : buildLeafLayoutOptions(typeKey, dynamicW, dynamicH),
       };
       nodesMap.set(service.id, node);
-    });
-  });
+    }
+  }
 
   // 3. Build Hierarchy (Pass 2)
   const placedNodeIds = new Set<string>();
@@ -1234,14 +1299,17 @@ export function buildElkGraph(
   });
 
   // 5. Edges and Implicit Nodes
-  (adac.connections || []).forEach((conn) => {
+  // (adac.connections || []).forEach((conn) => {
+  for (const conn of adac.connections || []) {
+    //
     const from = conn.from || conn.source;
     const to = conn.to || conn.target;
 
-    if (!from || !to) return; // Skip invalid connections
+    if (!from || !to) continue; // Skip invalid connections
 
     // Check if Endpoints exist, if not create implicit "External" nodes
-    [from, to].forEach((endpointId) => {
+    // [from, to].forEach(async (endpointId) => {
+    for (const endpointId of [from, to]) {
       if (!nodesMap.has(endpointId)) {
         // Smart Implicit Node Detection
         // Use appropriate icon set based on provider
@@ -1251,18 +1319,20 @@ export function buildElkGraph(
         if (isGcp) {
           // GCP implicit node icons
           if (lowerId.includes('user') || lowerId.includes('internet'))
-            icon = getGcpIconPath('project');
-          else if (lowerId.includes('client')) icon = getGcpIconPath('project');
-          else icon = getGcpIconPath('cloud-load-balancing');
+            icon = await getGcpIconPath('project');
+          else if (lowerId.includes('client'))
+            icon = await getGcpIconPath('project');
+          else icon = await getGcpIconPath('cloud-load-balancing');
         } else {
           // AWS implicit node icons
-          icon = getAwsIconPath('Internet');
-          if (lowerId.includes('user')) icon = getAwsIconPath('User');
-          else if (lowerId.includes('client')) icon = getAwsIconPath('Client');
+          icon = await getAwsIconPath('Internet');
+          if (lowerId.includes('user')) icon = await getAwsIconPath('User');
+          else if (lowerId.includes('client'))
+            icon = await getAwsIconPath('Client');
           else if (lowerId.includes('frontend'))
-            icon = getAwsIconPath('Application');
+            icon = await getAwsIconPath('Application');
           else if (lowerId.includes('backend'))
-            icon = getAwsIconPath('Compute');
+            icon = await getAwsIconPath('Compute');
         }
 
         // External user/client/internet/frontend nodes are entry points;
@@ -1299,7 +1369,7 @@ export function buildElkGraph(
         nodesMap.set(endpointId, implicitNode);
         rootChildren.push(implicitNode); // Implicit nodes are always top-level
       }
-    });
+    }
 
     edges.push({
       id: conn.id || `${from}->${to}`,
@@ -1307,7 +1377,7 @@ export function buildElkGraph(
       targets: [to],
       labels: [{ text: conn.type }],
     });
-  });
+  }
 
   // Final Sweep: Add any top-level nodes (Logical Groups) to root if not present
   nodesMap.forEach((node, id) => {

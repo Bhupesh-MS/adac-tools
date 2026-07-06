@@ -32,8 +32,10 @@ import {
   type CostItem,
   type ComplianceCheckResponse,
 } from './cost-compliance-panel';
+import { generateDiagramBrowser } from '../helper/diagram-generator';
 import type { Provider } from '../app';
 
+const USE_BACKEND = import.meta.env.VITE_USE_BACKEND === 'true';
 const nodeTypes = {
   customNode: CustomNode,
 };
@@ -421,19 +423,24 @@ const Flow = ({ onBack, provider }: EditorProps) => {
 
   const handleGenerateDiagram = async () => {
     setGenerating(true);
+    let result;
     try {
       const yamlStr = generateYaml(nodes, edges, provider);
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: yamlStr,
-          layout: 'elk',
-        }),
-      });
+      if (USE_BACKEND) {
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: yamlStr,
+            layout: 'elk',
+          }),
+        });
 
-      if (!response.ok) throw new Error('Generation failed');
-      const result = await response.json();
+        if (!response.ok) throw new Error('Generation failed');
+        result = await response.json();
+      } else {
+        result = await generateDiagramBrowser(yamlStr, 'elk');
+      }
 
       const blob = new Blob([result.svg], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
