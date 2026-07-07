@@ -1,9 +1,12 @@
-// import fs from 'fs-extra';
 import ELK from 'elkjs';
 import { type ElkNode, type ElkEdge } from '@mindfiredigital/adac-layout-elk';
 
 import { createLayoutEngine } from '@mindfiredigital/adac-layout';
 import { routeAStar } from './routing';
+
+let fsPromise: Promise<typeof import('fs-extra')> | undefined;
+
+const getFs = () => (fsPromise ??= import('fs-extra'));
 
 const CSS_STYLES = `
   /* ── Design Tokens ──────────────────────────────────── */
@@ -968,7 +971,7 @@ export async function renderSvg(
       if (!params.path) return null;
       if (iconResolver) return iconDataUriMap.get(params.path) || null;
       else {
-        const fs = await import('fs-extra');
+        const fs = await getFs();
         if (!fs.existsSync(params.path)) return null;
         const data = fs.readFileSync(params.path);
         if (!data) return null;
