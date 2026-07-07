@@ -802,13 +802,11 @@ export async function buildElkGraph(
   });
 
   // 2. Create Nodes for Infrastructure Services (Pass 1)
-  // (adac.infrastructure?.clouds || []).forEach((cloud: AdacCloud) => {
   for (const cloud of adac.infrastructure?.clouds || []) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cloudStyles = getStylesForCloud(cloud) as any;
     const gcpCloud = isGcpCloud(cloud);
 
-    // (cloud.services || []).forEach(async (service: AdacService) => {
     for (const service of cloud.services || []) {
       let width = 80;
       let height = 100;
