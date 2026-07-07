@@ -959,7 +959,7 @@ export async function renderSvg(
   const width = layout.width || 800;
   const height = layout.height || 600;
 
-  let iconDataUriMap: Map<string, string>;
+  let iconDataUriMap = new Map<string, string>();
 
   if (iconResolver) {
     const uniqueIconPaths = getUniqueIconPaths(graph);

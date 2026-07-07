@@ -10,10 +10,10 @@ import { ElkNode, ElkEdge } from './types.js';
 let fsPromise: Promise<typeof import('fs')> | undefined;
 let pathPromise: Promise<typeof import('path')> | undefined;
 
-export const getFs = () => (fsPromise ??= import('fs'));
-export const getPath = () => (pathPromise ??= import('path'));
+const getFs = () => (fsPromise ??= import('fs'));
+const getPath = () => (pathPromise ??= import('path'));
 
-export const isBrowser =
+const isBrowser =
   typeof window !== 'undefined' && typeof document !== 'undefined';
 
 type IconProvider = 'aws' | 'gcp' | 'azure';

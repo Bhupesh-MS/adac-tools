@@ -10,7 +10,7 @@ import { renderSvg } from './renderer.js';
 
 let fsPromise: Promise<typeof import('fs-extra')> | undefined;
 
-export const getFs = () => (fsPromise ??= import('fs-extra'));
+const getFs = () => (fsPromise ??= import('fs-extra'));
 
 type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
 

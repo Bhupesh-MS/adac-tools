@@ -33,6 +33,7 @@ import {
   type ComplianceCheckResponse,
 } from './cost-compliance-panel';
 import { generateDiagramBrowser } from '../helper/diagram-generator';
+import type { GenerationResult } from '@mindfiredigital/adac-core';
 import type { Provider } from '../app';
 
 const USE_BACKEND = import.meta.env.VITE_USE_BACKEND === 'true';
@@ -357,9 +358,9 @@ const Flow = ({ onBack, provider }: EditorProps) => {
               ...n.data,
               costConfig: config.cost
                 ? {
-                    tier: config.cost.tier,
-                    monthlyCost: config.cost.monthlyCost,
-                  }
+                  tier: config.cost.tier,
+                  monthlyCost: config.cost.monthlyCost,
+                }
                 : undefined,
               complianceFrameworks: config.compliance || [],
             },
@@ -423,7 +424,7 @@ const Flow = ({ onBack, provider }: EditorProps) => {
 
   const handleGenerateDiagram = async () => {
     setGenerating(true);
-    let result;
+    let result: GenerationResult;
     try {
       const yamlStr = generateYaml(nodes, edges, provider);
       if (USE_BACKEND) {
@@ -501,11 +502,10 @@ const Flow = ({ onBack, provider }: EditorProps) => {
         {/* Cost Button */}
         <button
           onClick={() => setActivePanel(activePanel === 'cost' ? null : 'cost')}
-          className={`p-2 rounded-lg border shadow-lg flex items-center gap-2 text-sm font-medium transition-all ${
-            activePanel === 'cost'
-              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-              : 'bg-[#252526] hover:bg-[#333] border-[#444] text-white'
-          }`}
+          className={`p-2 rounded-lg border shadow-lg flex items-center gap-2 text-sm font-medium transition-all ${activePanel === 'cost'
+            ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+            : 'bg-[#252526] hover:bg-[#333] border-[#444] text-white'
+            }`}
         >
           <DollarSign size={16} className="text-emerald-400" />
           {totalMonthlyCost > 0 && (
@@ -521,11 +521,10 @@ const Flow = ({ onBack, provider }: EditorProps) => {
           onClick={() =>
             setActivePanel(activePanel === 'compliance' ? null : 'compliance')
           }
-          className={`p-2 rounded-lg border shadow-lg flex items-center gap-2 text-sm font-medium transition-all ${
-            activePanel === 'compliance'
-              ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
-              : 'bg-[#252526] hover:bg-[#333] border-[#444] text-white'
-          }`}
+          className={`p-2 rounded-lg border shadow-lg flex items-center gap-2 text-sm font-medium transition-all ${activePanel === 'compliance'
+            ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
+            : 'bg-[#252526] hover:bg-[#333] border-[#444] text-white'
+            }`}
         >
           <Shield size={16} className="text-blue-400" />
           {complianceNodeCount > 0 && (
@@ -547,13 +546,12 @@ const Flow = ({ onBack, provider }: EditorProps) => {
         <button
           onClick={handleGenerateDiagram}
           disabled={generating}
-          className={`${
-            provider === 'aws'
-              ? 'bg-[#ec7211] hover:bg-[#d6650d]'
-              : provider === 'gcp'
-                ? 'bg-[#4285F4] hover:bg-[#3367d6]'
-                : 'bg-[#0078D4] hover:bg-[#005a9e]'
-          } text-white p-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-bold transition-colors disabled:opacity-70 disabled:cursor-not-allowed`}
+          className={`${provider === 'aws'
+            ? 'bg-[#ec7211] hover:bg-[#d6650d]'
+            : provider === 'gcp'
+              ? 'bg-[#4285F4] hover:bg-[#3367d6]'
+              : 'bg-[#0078D4] hover:bg-[#005a9e]'
+            } text-white p-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-bold transition-colors disabled:opacity-70 disabled:cursor-not-allowed`}
         >
           {generating ? (
             <Loader size={16} className="animate-spin" />
