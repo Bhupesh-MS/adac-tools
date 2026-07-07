@@ -8,6 +8,10 @@ import {
 } from '@mindfiredigital/adac-layout-core';
 import { renderSvg } from './renderer.js';
 
+let fsPromise: Promise<typeof import('fs-extra')> | undefined;
+
+export const getFs = () => (fsPromise ??= import('fs-extra'));
+
 type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
 
 export interface GenerationResult {
@@ -145,7 +149,7 @@ export async function generateDiagram(
   period: CostPeriod = 'monthly',
   skipOptimizer: boolean = false
 ): Promise<void> {
-  const fs = await import('fs-extra');
+  const fs = await getFs();
   const raw = await fs.readFile(input, 'utf8');
   const { svg } = await generateDiagramSvg(
     raw,

@@ -7,6 +7,12 @@ import {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ElkNode, ElkEdge } from './types.js';
 
+let fsPromise: Promise<typeof import('fs')> | undefined;
+let pathPromise: Promise<typeof import('path')> | undefined;
+
+export const getFs = () => (fsPromise ??= import('fs'));
+export const getPath = () => (pathPromise ??= import('path'));
+
 export const isBrowser =
   typeof window !== 'undefined' && typeof document !== 'undefined';
 
@@ -20,7 +26,7 @@ const PROVIDER_FOLDERS: Record<IconProvider, string> = {
 
 async function iconMapCandidates(provider: IconProvider): Promise<string[]> {
   const folder = PROVIDER_FOLDERS[provider];
-  const path = await import('path');
+  const path = await getPath();
   return [
     path.resolve(__dirname, '..', '..', folder, 'mappings', 'icon-map.json'),
     path.resolve(
@@ -54,7 +60,7 @@ async function loadIconMap(
       return resp.json();
     }
 
-    const fs = await import('fs');
+    const fs = await getFs();
     for (const p of await iconMapCandidates(provider)) {
       if (fs.existsSync(p)) {
         return JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -74,7 +80,7 @@ async function assetCandidates(
   provider: IconProvider,
   relativePath: string
 ): Promise<string[]> {
-  const path = await import('path');
+  const path = await getPath();
   const folder = PROVIDER_FOLDERS[provider];
   return [
     // dist/assets — only AWS historically shipped icons inside the package
@@ -103,7 +109,7 @@ async function resolveProviderAssetPath(
   if (!relativePath) return undefined;
   if (isBrowser) return relativePath;
 
-  const fs = await import('fs');
+  const fs = await getFs();
   for (const p of await assetCandidates(provider, relativePath)) {
     if (fs.existsSync(p)) return p;
   }
