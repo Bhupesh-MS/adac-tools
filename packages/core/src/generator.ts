@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import { parseAdacFromContent } from '@mindfiredigital/adac-parser';
 import { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
-import { validateAdacConfig } from '@mindfiredigital/adac-layout-core';
+import { validateAdacConfig } from '@mindfiredigital/adac-validator';
 import { ComplianceChecker } from '@mindfiredigital/adac-compliance';
 import {
   OptimizerEngine,

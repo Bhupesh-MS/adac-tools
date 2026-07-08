@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@mindfiredigital/adac-parser": "workspace:*",
-    "@mindfiredigital/adac-layout-core": "workspace:*",
+    "@mindfiredigital/adac-validator": "workspace:*",
     "handlebars": "^4.7.9",
     "commander": "^12.0.0"
   },

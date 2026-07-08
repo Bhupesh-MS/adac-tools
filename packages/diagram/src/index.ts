@@ -3,9 +3,11 @@ export * from '@mindfiredigital/adac-core';
 export { parseAdac, parseAdacFromContent } from '@mindfiredigital/adac-parser';
 export {
   validateAdacConfig,
+  type AdacConfig,
+} from '@mindfiredigital/adac-validator';
+export {
   analyzeOptimizations,
   OptimizerEngine,
-  type AdacConfig,
 } from '@mindfiredigital/adac-layout-core';
 export { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
 export {

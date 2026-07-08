@@ -1,9 +1,6 @@
 import yaml from 'js-yaml';
 import { parseAdac } from '@mindfiredigital/adac-parser';
-import type {
-  AdacConfig,
-  AdacService,
-} from '@mindfiredigital/adac-layout-core';
+import type { AdacConfig } from '@mindfiredigital/adac-validator';
 import {
   createConfigMapManifest,
   createSecretManifest,
@@ -19,6 +16,9 @@ import type {
   K8sWorkloadKind,
   NormalizedK8sService,
 } from './types/index.js';
+
+type AdacService =
+  AdacConfig['infrastructure']['clouds'][number]['services'][number];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);

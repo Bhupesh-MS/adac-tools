@@ -28,7 +28,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mindfiredigital/adac-layout-core": "workspace:*",
+    "@mindfiredigital/adac-validator": "workspace:*",
     "commander": "^12.0.0",
     "@mindfiredigital/adac-parser": "workspace:*"
   },

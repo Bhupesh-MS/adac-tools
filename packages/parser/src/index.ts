@@ -4,7 +4,7 @@ import {
   AdacConfig,
   validateAdacConfig,
   ValidationResult,
-} from '@mindfiredigital/adac-layout-core';
+} from '@mindfiredigital/adac-validator';
 
 export class AdacParseError extends Error {
   constructor(

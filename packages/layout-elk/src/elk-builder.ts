@@ -1,13 +1,13 @@
-import {
-  AdacConfig,
-  AdacService,
-  AdacApplication,
-  AdacCloud,
-} from '@mindfiredigital/adac-layout-core';
+import type { AdacConfig } from '@mindfiredigital/adac-validator';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ElkNode, ElkEdge } from './types.js';
 import path from 'path';
 import fs from 'fs';
+
+type AdacService =
+  AdacConfig['infrastructure']['clouds'][number]['services'][number];
+type AdacApplication = NonNullable<AdacConfig['applications']>[number];
+type AdacCloud = AdacConfig['infrastructure']['clouds'][number];
 
 type IconProvider = 'aws' | 'gcp' | 'azure';
 

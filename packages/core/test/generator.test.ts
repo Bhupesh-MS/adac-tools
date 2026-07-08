@@ -5,9 +5,9 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 
-vi.mock('@mindfiredigital/adac-layout-core', async (importOriginal) => {
+vi.mock('@mindfiredigital/adac-validator', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('@mindfiredigital/adac-layout-core')>();
+    await importOriginal<typeof import('@mindfiredigital/adac-validator')>();
   return {
     ...actual,
     validateAdacConfig: vi.fn((config) => {

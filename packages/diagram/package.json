@@ -48,6 +48,7 @@
     "@mindfiredigital/adac-layout-core": "workspace:*",
     "@mindfiredigital/adac-layout-elk": "workspace:*",
     "@mindfiredigital/adac-parser": "workspace:*",
+    "@mindfiredigital/adac-validator": "workspace:*",
     "@mindfiredigital/adac-icons-aws": "workspace:*",
     "@mindfiredigital/adac-icons-azure": "workspace:*",
     "@mindfiredigital/adac-icons-gcp": "workspace:*",

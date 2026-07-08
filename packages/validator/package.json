@@ -1,7 +1,7 @@
 {
-  "name": "@mindfiredigital/adac-doc",
+  "name": "@mindfiredigital/adac-validator",
   "version": "0.0.1",
-  "description": "Documentation generator for ADAC schemas and compliance reports",
+  "description": "Schema validator for ADAC architecture definitions",
   "author": "Mindfire Digital",
   "license": "MIT",
   "type": "module",
@@ -10,10 +10,9 @@
   "types": "dist/index.d.ts",
   "keywords": [
     "adac",
-    "documentation",
+    "validator",
     "schema",
-    "markdown",
-    "generator"
+    "validation"
   ],
   "files": [
     "dist"
@@ -23,17 +22,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "handlebars": "^4.7.9",
-    "marked": "^15.0.0",
-    "@mindfiredigital/adac-layout-core": "workspace:*",
-    "@mindfiredigital/adac-validator": "workspace:*",
-    "@mindfiredigital/adac-parser": "workspace:*",
-    "@mindfiredigital/adac-compliance": "workspace:*"
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/mindfiredigital/adac-tools.git",
-    "directory": "packages/doc"
+    "directory": "packages/validator"
   },
   "publishConfig": {
     "access": "public",

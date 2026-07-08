@@ -1,5 +1,8 @@
-import type { AdacConfig, AdacService } from '../..';
+import type { AdacConfig } from '@mindfiredigital/adac-validator';
 import type { OptimizationRecommendation } from '../types/index.js';
+
+type AdacService =
+  AdacConfig['infrastructure']['clouds'][number]['services'][number];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
