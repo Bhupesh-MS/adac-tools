@@ -15,8 +15,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@mindfiredigital/adac-diagram": "workspace:*",
     "@mindfiredigital/adac-core": "workspace:*",
+    "@mindfiredigital/adac-diagram": "workspace:*",
     "@xyflow/react": "^12.0.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.0.0",
@@ -46,7 +46,7 @@
     "tailwindcss": "^3.4.0",
     "typescript": "~5.9.0",
     "typescript-eslint": "^8.0.0",
-    "vite": "^6.0.0",
+    "vite": "^8.1.3",
     "vitest": "^4.0.18"
   }
 }
