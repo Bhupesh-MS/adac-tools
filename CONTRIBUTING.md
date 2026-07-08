@@ -147,7 +147,7 @@ The scope must be a **package name** without the `@mindfiredigital/` prefix:
 
 - `adac-core`
 - `adac-parser`
-- `adac-schema`
+- `adac-validator`
 - `adac-layout`
 - `adac-layout-elk`
 
@@ -166,7 +166,6 @@ The scope must be a **package name** without the `@mindfiredigital/` prefix:
 - `adac-export-cloudformation`
 - `adac-doc`
 - `adac-templates`
-- `adac-optimizer`
 
 ### Subject
 

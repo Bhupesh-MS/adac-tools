@@ -125,7 +125,7 @@ File-based wrapper around `generateDiagramSvg`. Reads the YAML from `input` and 
 
 ```typescript
 export { parseAdac, parseAdacFromContent } from '@mindfiredigital/adac-parser';
-export { validateAdacConfig } from '@mindfiredigital/adac-schema';
+export { validateAdacConfig } from '@mindfiredigital/adac-validator';
 export { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
 ```
 
@@ -135,8 +135,7 @@ export { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
 YAML input
   │
   ├─ parseAdacFromContent()     ← adac-parser
-  ├─ validateAdacConfig()       ← adac-schema        (if validate=true)
-  ├─ OptimizerEngine.analyze()  ← adac-optimizer     (unless skipOptimizer)
+  ├─ validateAdacConfig()       ← adac-validator        (if validate=true)
   ├─ ComplianceChecker()        ← adac-compliance
   ├─ buildElkGraph()            ← adac-layout-elk
   ├─ renderSvg()                ← internal renderer
@@ -145,9 +144,8 @@ YAML input
 
 ## See Also
 
-- [@mindfiredigital/adac-optimizer](../optimizer) — Architecture optimization rules
 - [@mindfiredigital/adac-parser](../parser) — YAML parsing
-- [@mindfiredigital/adac-schema](../schema) — Schema validation
+- [@mindfiredigital/adac-validator](../validator) — Validation
 - [@mindfiredigital/adac-diagram](../diagram) — Distribution package & CLI
 
 ## License

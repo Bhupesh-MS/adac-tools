@@ -101,7 +101,6 @@ if (optimizationResult) {
 
 ## See Also
 
-- [@mindfiredigital/adac-optimizer](../optimizer) — Architecture optimization rules
 - [@mindfiredigital/adac-core](../core) — Core generation engine
 - [@mindfiredigital/adac-cli](../cli) — CLI argument parsing
 - [@mindfiredigital/adac-compliance](../compliance) — Compliance checking

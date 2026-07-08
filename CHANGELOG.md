@@ -69,7 +69,7 @@ For detailed changes in specific packages, refer to:
 - [adac-core CHANGELOG](packages/core/CHANGELOG.md)
 - [adac-diagram CHANGELOG](packages/diagram/CHANGELOG.md)
 - [adac-parser CHANGELOG](packages/parser/CHANGELOG.md)
-- [adac-schema CHANGELOG](packages/schema/CHANGELOG.md)
+- [adac-validator CHANGELOG](packages/validator/CHANGELOG.md)
 - [adac-compliance CHANGELOG](packages/compliance/CHANGELOG.md)
 - [adac-cost CHANGELOG](packages/cost/CHANGELOG.md)
 - [adac-layout-elk CHANGELOG](packages/layout-elk/CHANGELOG.md)

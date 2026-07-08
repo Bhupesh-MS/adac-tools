@@ -178,7 +178,6 @@ All endpoints compress their responses using standard HTTP content-encoding nego
 
 ## See Also
 
-- [@mindfiredigital/adac-optimizer](../optimizer) — Optimizer package
 - [@mindfiredigital/adac-core](../core) — Core engine
 - [@mindfiredigital/adac-diagram](../diagram) — CLI tool
 - [@mindfiredigital/adac-web](../web) — Web UI

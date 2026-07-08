@@ -115,7 +115,6 @@ export type CLIOptions = {
 
 - [@mindfiredigital/adac-diagram](../diagram) — Main CLI distribution
 - [@mindfiredigital/adac-core](../core) — Core engine
-- [@mindfiredigital/adac-optimizer](../optimizer) — Optimization rules
 
 ## License
 
