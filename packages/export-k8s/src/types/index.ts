@@ -15,11 +15,7 @@ export interface K8sManifest {
 }
 
 export type K8sWorkloadKind =
-  | 'deployment'
-  | 'service'
-  | 'ingress'
-  | 'configmap'
-  | 'secret';
+  'deployment' | 'service' | 'ingress' | 'configmap' | 'secret';
 
 export interface NormalizedK8sService {
   id: string;
