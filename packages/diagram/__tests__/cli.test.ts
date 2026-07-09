@@ -128,7 +128,8 @@ describe('cli.ts', () => {
       true,
       { s3: 10 },
       'monthly',
-      false
+      false,
+      expect.any(Function)
     );
     // In current implementation, generateDiagram does not return a value, we can just assert it was called.
   });

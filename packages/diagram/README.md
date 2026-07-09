@@ -10,6 +10,7 @@ Core diagram generation logic and CLI for ADAC (Architecture Diagram As Code). I
 - **Multiple Layout Engines**: ELK (`elkjs`), and Custom
 - **SVG Rendering**: High-quality SVG output with embedded icons and styling
 - **Validation**: Integrated schema validation before generation
+- **Compliance**: Automatically checks declared compliance frameworks and passes tooltip metadata into the core renderer
 - **🔍 Optimizer**: Automatic architecture optimization recommendations (cost, security, reliability) printed to the console on every run
 - **💡 Interactive Tooltips**: Generated SVGs embed cost, compliance, and optimization metadata directly into node tooltips for easy inspection.
 

@@ -95,39 +95,22 @@ infrastructure:
   });
 
   it('should include compliance tooltips when compliance checks fail', async () => {
-    const complianceSpy = vi
-      .spyOn(
-        await import('@mindfiredigital/adac-compliance'),
-        'ComplianceChecker'
-      )
-      .mockImplementation(function () {
-        return {
-          checkCompliance: () => ({
-            byService: {
-              'vm-1': [
-                {
-                  framework: 'soc2',
-                  isCompliant: false,
-                  violations: [
-                    {
-                      ruleId: 'r1',
-                      message: 'Not compliant error',
-                      severity: 'high',
-                      remediation: 'Fix it',
-                    },
-                  ],
-                },
-              ],
-            },
-          }),
-        };
-      });
-
-    const result = await generateDiagramSvg(validYaml);
+    const result = await generateDiagramSvg(
+      validYaml,
+      undefined,
+      false,
+      undefined,
+      'monthly',
+      false,
+      () => ({
+        'vm-1': {
+          frameworks: ['soc2'],
+          violations: ['[SOC2 - HIGH] Not compliant error'],
+        },
+      })
+    );
     expect(result.svg).toContain('soc2');
     expect(result.svg).toContain('Not compliant error');
-
-    complianceSpy.mockRestore();
   });
 
   it('should handle optimizer errors gracefully', async () => {

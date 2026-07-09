@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 import { runCLI } from '@mindfiredigital/adac-cli';
-import {
-  generateDiagram,
-  parseAdac,
-  validateAdacConfig,
-} from '@mindfiredigital/adac-core';
+import { parseAdac, validateAdacConfig } from '@mindfiredigital/adac-core';
+import { generateDiagram as generateDiagramWithCompliance } from './generator.js';
 import {
   aggregateCostFromYaml,
   calculatePerServiceCosts,
@@ -43,7 +40,7 @@ runCLI({
       period as CostPeriod,
       pricingModel ?? 'on_demand'
     );
-    return generateDiagram(
+    return generateDiagramWithCompliance(
       input,
       output,
       layoutOverride,

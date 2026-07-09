@@ -191,12 +191,6 @@ importers:
 
   packages/core:
     dependencies:
-      '@mindfiredigital/adac-compliance':
-        specifier: workspace:*
-        version: link:../compliance
-      '@mindfiredigital/adac-layout':
-        specifier: workspace:*
-        version: link:../layout
       '@mindfiredigital/adac-validator':
         specifier: workspace:*
         version: link:../validator

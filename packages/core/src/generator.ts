@@ -1,8 +1,10 @@
 import fs from 'fs-extra';
 import { parseAdacFromContent } from '@mindfiredigital/adac-parser';
 import { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
-import { validateAdacConfig } from '@mindfiredigital/adac-validator';
-import { ComplianceChecker } from '@mindfiredigital/adac-compliance';
+import {
+  validateAdacConfig,
+  type AdacConfig,
+} from '@mindfiredigital/adac-validator';
 import {
   OptimizerEngine,
   type OptimizationResult,
@@ -10,6 +12,15 @@ import {
 import { renderSvg } from './renderer.js';
 
 type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
+
+export type ComplianceTooltipMap = Record<
+  string,
+  { frameworks: string[]; violations: string[] }
+>;
+
+export type ComplianceTooltipProvider = (
+  adac: AdacConfig
+) => ComplianceTooltipMap | Promise<ComplianceTooltipMap>;
 
 export interface GenerationResult {
   svg: string;
@@ -26,7 +37,8 @@ export async function generateDiagramSvg(
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
-  skipOptimizer: boolean = false
+  skipOptimizer: boolean = false,
+  complianceProvider?: ComplianceTooltipProvider
 ): Promise<GenerationResult> {
   const logs: string[] = [];
   const start = Date.now();
@@ -70,28 +82,9 @@ export async function generateDiagramSvg(
 
     const graph = buildElkGraph(adac);
     const engine = layoutOverride || adac.layout || 'custom';
-    const checker = new ComplianceChecker();
-    const { byService } = checker.checkCompliance(adac);
-
-    const complianceTooltipMap: Record<
-      string,
-      { frameworks: string[]; violations: string[] }
-    > = {};
-    for (const [serviceId, results] of Object.entries(byService)) {
-      const frameworks = results.map((r) => r.framework);
-      const violations: string[] = [];
-
-      for (const result of results) {
-        if (!result.isCompliant) {
-          result.violations.forEach((v) => {
-            violations.push(
-              `[${result.framework.toUpperCase()} - ${v.severity.toUpperCase()}] ${v.message}`
-            );
-          });
-        }
-      }
-      complianceTooltipMap[serviceId] = { frameworks, violations };
-    }
+    const complianceTooltipMap = complianceProvider
+      ? await complianceProvider(adac)
+      : undefined;
 
     const optimizationTooltipMap: Record<
       string,
@@ -142,7 +135,8 @@ export async function generateDiagram(
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
-  skipOptimizer: boolean = false
+  skipOptimizer: boolean = false,
+  complianceProvider?: ComplianceTooltipProvider
 ): Promise<void> {
   const raw = await fs.readFile(input, 'utf8');
   const { svg } = await generateDiagramSvg(
@@ -151,7 +145,8 @@ export async function generateDiagram(
     validate,
     costData,
     period,
-    skipOptimizer
+    skipOptimizer,
+    complianceProvider
   );
   await fs.outputFile(output, svg);
   console.log(`Diagram generated: ${output}`);
