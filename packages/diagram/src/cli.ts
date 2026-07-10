@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { runCLI } from '@mindfiredigital/adac-cli';
-import { parseAdac, validateAdacConfig } from '@mindfiredigital/adac-core';
+import { parseAdac } from '@mindfiredigital/adac-core';
 import { generateDiagram as generateDiagramWithCompliance } from './generator.js';
 import {
   aggregateCostFromYaml,
   calculatePerServiceCosts,
+  validateAdacCostConfig,
 } from '@mindfiredigital/adac-cost';
 import { generateTerraformFromAdacFile } from '@mindfiredigital/adac-export-terraform';
 import type { CostPeriod } from '@mindfiredigital/adac-cost';
@@ -72,6 +73,6 @@ runCLI({
     console.log(`Terraform files written to ${targetDir}`);
   },
   parseAdac,
-  validateAdacConfig,
+  validateAdacConfig: validateAdacCostConfig,
   version,
 });

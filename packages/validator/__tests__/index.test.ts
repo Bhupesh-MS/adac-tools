@@ -82,4 +82,45 @@ describe('Adac Validator', () => {
       '/infrastructure/clouds/0/services/0 ID "app1" is not unique'
     );
   });
+
+  it('should treat domain-specific properties as opaque extension data', () => {
+    const result = validateAdacConfig({
+      ...validConfig,
+      cost: {
+        total_monthly: -42,
+      },
+    });
+
+    expect(result).toEqual({ valid: true });
+  });
+
+  it('should support explicit validation extensions', () => {
+    const result = validateAdacConfig(
+      {
+        ...validConfig,
+        example: {
+          enabled: true,
+        },
+      },
+      {
+        extensions: [
+          {
+            name: 'example',
+            rootProperties: {
+              example: {
+                type: 'object',
+                properties: {
+                  enabled: {
+                    type: 'boolean',
+                  },
+                },
+              },
+            },
+          },
+        ],
+      }
+    );
+
+    expect(result).toEqual({ valid: true });
+  });
 });

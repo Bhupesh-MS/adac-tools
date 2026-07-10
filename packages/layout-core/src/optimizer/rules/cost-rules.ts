@@ -3,6 +3,9 @@ import type { OptimizationRecommendation } from '../types/index.js';
 
 type AdacService =
   AdacConfig['infrastructure']['clouds'][number]['services'][number];
+type CostAnnotatedService = AdacService & {
+  cost?: Record<string, unknown>;
+};
 
 // ─── Reserved-Instance services that support RI pricing ──────────────────────
 const RI_ELIGIBLE_SERVICES = new Set([
@@ -40,7 +43,7 @@ const MANAGED_ALTERNATIVES: Record<string, string> = {
  */
 function checkMissingCostDefinition(
   serviceId: string,
-  service: AdacService
+  service: CostAnnotatedService
 ): OptimizationRecommendation | null {
   if (!service.cost || Object.keys(service.cost).length === 0) {
     return {
@@ -63,7 +66,7 @@ function checkMissingCostDefinition(
 /** Suggest Reserved Instance or Savings Plans for eligible on-demand services */
 function checkReservedInstanceOpportunity(
   serviceId: string,
-  service: AdacService
+  service: CostAnnotatedService
 ): OptimizationRecommendation | null {
   const key = service.service?.toLowerCase() ?? '';
   const billingModel = (

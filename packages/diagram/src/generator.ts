@@ -4,8 +4,10 @@ import {
   type ComplianceTooltipMap,
   type GenerationResult,
 } from '@mindfiredigital/adac-core';
+import { parseAdacFromContent } from '@mindfiredigital/adac-parser';
 import type { AdacConfig } from '@mindfiredigital/adac-validator';
 import { ComplianceChecker } from '@mindfiredigital/adac-compliance';
+import { validateAdacCostConfig } from '@mindfiredigital/adac-cost';
 
 type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
 
@@ -42,10 +44,21 @@ export async function generateDiagramSvg(
   period: CostPeriod = 'monthly',
   skipOptimizer: boolean = false
 ): Promise<GenerationResult> {
+  if (validate) {
+    const adac = parseAdacFromContent(inputContent, { validate: false });
+    const validation = validateAdacCostConfig(adac);
+
+    if (!validation.valid) {
+      throw new Error(
+        `Schema validation failed:\n${validation.errors?.join('\n')}`
+      );
+    }
+  }
+
   return coreGenerateDiagramSvg(
     inputContent,
     layoutOverride,
-    validate,
+    false,
     costData,
     period,
     skipOptimizer,

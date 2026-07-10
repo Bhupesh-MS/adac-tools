@@ -2,14 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import path from 'path';
 import { runCLI } from '@mindfiredigital/adac-cli';
-import {
-  generateDiagram,
-  parseAdac,
-  validateAdacConfig,
-} from '@mindfiredigital/adac-core';
+import { generateDiagram, parseAdac } from '@mindfiredigital/adac-core';
 import {
   calculatePerServiceCosts,
   aggregateCostFromYaml,
+  validateAdacCostConfig,
 } from '@mindfiredigital/adac-cost';
 import { generateTerraformFromAdacFile } from '@mindfiredigital/adac-export-terraform';
 
@@ -43,6 +40,7 @@ vi.mock('@mindfiredigital/adac-core', () => ({
 vi.mock('@mindfiredigital/adac-cost', () => ({
   calculatePerServiceCosts: vi.fn(),
   aggregateCostFromYaml: vi.fn(),
+  validateAdacCostConfig: vi.fn(),
 }));
 
 vi.mock('@mindfiredigital/adac-export-terraform', () => ({
@@ -75,7 +73,7 @@ describe('cli.ts', () => {
     const runCLIArg = vi.mocked(runCLI).mock.calls[0][0];
     expect(runCLIArg.version).toBe('1.2.3');
     expect(runCLIArg.parseAdac).toBe(parseAdac);
-    expect(runCLIArg.validateAdacConfig).toBe(validateAdacConfig);
+    expect(runCLIArg.validateAdacConfig).toBe(validateAdacCostConfig);
     expect(runCLIArg.calculateCostFromYaml).toBe(aggregateCostFromYaml);
   });
 
