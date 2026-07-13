@@ -20,6 +20,32 @@ pnpm install
 pnpm run build
 ```
 
+### Diagram Generation
+
+The application supports two diagram generation modes. By default, diagrams are generated **directly in the browser**. To use the backend instead, set the `VITE_USE_BACKEND` environment variable.
+
+#### Browser Mode (Default)
+
+Leave `VITE_USE_BACKEND` unset or remove it from your `.env` file.
+
+```env
+# VITE_USE_BACKEND is not set
+```
+
+Run the following command once before starting the application to copy the required icon assets:
+
+```bash
+pnpm run setup:icons
+```
+
+#### Backend Mode
+
+To generate diagrams using the backend API, set:
+
+```env
+VITE_USE_BACKEND=true
+```
+
 ### Run in Development
 
 ```bash
