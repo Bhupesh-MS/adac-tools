@@ -82,9 +82,19 @@ export async function generateDiagramSvg(
 
     const graph = buildElkGraph(adac);
     const engine = layoutOverride || adac.layout || 'custom';
-    const complianceTooltipMap = complianceProvider
-      ? await complianceProvider(adac)
-      : undefined;
+
+    let complianceTooltipMap: ComplianceTooltipMap | undefined;
+
+    try {
+      complianceTooltipMap = complianceProvider
+        ? await complianceProvider(adac)
+        : undefined;
+    } catch (compErr) {
+      log(
+        `Compliance provider error: ${compErr instanceof Error ? compErr.message : String(compErr)}`
+      );
+      complianceTooltipMap = undefined;
+    }
 
     const optimizationTooltipMap: Record<
       string,

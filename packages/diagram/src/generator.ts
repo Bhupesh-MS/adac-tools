@@ -11,7 +11,9 @@ import { validateAdacCostConfig } from '@mindfiredigital/adac-cost';
 
 type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
 
-function buildComplianceTooltipMap(adac: AdacConfig): ComplianceTooltipMap {
+export function buildComplianceTooltipMap(
+  adac: AdacConfig
+): ComplianceTooltipMap {
   const checker = new ComplianceChecker();
   const { byService } = checker.checkCompliance(adac);
   const complianceTooltipMap: ComplianceTooltipMap = {};

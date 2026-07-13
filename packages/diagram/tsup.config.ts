@@ -14,6 +14,7 @@ export default defineConfig({
     '@mindfiredigital/adac-cli',
     '@mindfiredigital/adac-cost',
     '@mindfiredigital/adac-export-terraform',
+    '@mindfiredigital/adac-validator',
     'elkjs',
     'fs-extra',
     'axios',

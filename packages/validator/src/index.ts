@@ -6,9 +6,14 @@ import {
   ValidationResult,
 } from './validator.js';
 
+type AdacService =
+  AdacConfig['infrastructure']['clouds'][number]['services'][number];
+
 export { validateAdacConfig };
+
 export type {
   AdacConfig,
+  AdacService,
   ValidationExtension,
   ValidationOptions,
   ValidationResult,

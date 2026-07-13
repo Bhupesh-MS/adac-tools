@@ -109,6 +109,42 @@ describe('ADAC cost integration helpers', () => {
     );
   });
 
+  it('should calculate costs across multiple regions', () => {
+    const result = calculatePerServiceCosts({
+      infrastructure: {
+        clouds: [
+          {
+            region: 'us-east-1',
+            services: [
+              {
+                id: 'api-us',
+                service: 'ec2',
+                configuration: { instance_type: 't3.medium' },
+              },
+            ],
+          },
+          {
+            region: 'eu-west-1',
+            services: [
+              {
+                id: 'api-eu',
+                service: 'ec2',
+                configuration: { instance_type: 't3.medium' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(result).toEqual({
+      'api-us': expect.any(Number),
+      'api-eu': expect.any(Number),
+    });
+    expect(result?.['api-us']).toBeGreaterThan(0);
+    expect(result?.['api-eu']).toBeGreaterThan(0);
+  });
+
   it('should calculate positive costs per service id', () => {
     const result = calculatePerServiceCosts({
       infrastructure: {

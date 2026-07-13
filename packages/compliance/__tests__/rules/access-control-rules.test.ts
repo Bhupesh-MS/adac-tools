@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { requireLeastPrivilegeRule } from '../../src/rules/access-control-rules';
-import type { AdacConfig } from '@mindfiredigital/adac-validator';
-
-type AdacService = AdacConfig['infrastructure']['clouds'][0]['services'][0];
+import type { AdacConfig, AdacService } from '@mindfiredigital/adac-validator';
 
 const makeContext = (): { config: AdacConfig } => ({
   config: {

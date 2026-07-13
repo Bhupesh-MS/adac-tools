@@ -93,6 +93,7 @@ describe('cli.ts', () => {
       JSON.stringify({ version: '1.2.3' })
     );
     await loadCli();
+    const { buildComplianceTooltipMap } = await import('../src/generator');
 
     const runCLIArg = vi.mocked(runCLI).mock.calls[0][0] as Parameters<
       typeof runCLI
@@ -127,7 +128,7 @@ describe('cli.ts', () => {
       { s3: 10 },
       'monthly',
       false,
-      expect.any(Function)
+      buildComplianceTooltipMap
     );
     // In current implementation, generateDiagram does not return a value, we can just assert it was called.
   });

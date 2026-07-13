@@ -1,8 +1,6 @@
-import type { AdacConfig } from '@mindfiredigital/adac-validator';
+import type { AdacConfig, AdacService } from '@mindfiredigital/adac-validator';
 import type { OptimizationRecommendation } from '../types/index.js';
 
-type AdacService =
-  AdacConfig['infrastructure']['clouds'][number]['services'][number];
 type CostAnnotatedService = AdacService & {
   cost?: Record<string, unknown>;
 };

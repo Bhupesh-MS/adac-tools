@@ -113,5 +113,6 @@ infrastructure:
 
     // Check that SVG is generated correctly and compliance tooltips aren't added as violations
     expect(result.svg).toContain('<svg');
+    expect(result.svg).not.toContain('violation');
   });
 });

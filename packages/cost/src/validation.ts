@@ -7,6 +7,7 @@ import {
 const costSchema = {
   type: 'object',
   description: 'Cost information for a service',
+  required: ['monthly_estimate'],
   properties: {
     monthly_estimate: {
       type: 'number',
@@ -49,6 +50,7 @@ const costSchema = {
 const costSummarySchema = {
   type: 'object',
   description: 'Overall architecture cost summary',
+  required: ['total_monthly'],
   properties: {
     total_monthly: {
       type: 'number',

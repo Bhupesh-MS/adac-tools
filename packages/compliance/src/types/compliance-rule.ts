@@ -1,8 +1,5 @@
-import type { AdacConfig } from '@mindfiredigital/adac-validator';
+import type { AdacConfig, AdacService } from '@mindfiredigital/adac-validator';
 import { Violation } from './violation';
-
-type AdacService =
-  AdacConfig['infrastructure']['clouds'][number]['services'][number];
 
 export interface EvaluationContext {
   config: AdacConfig;
