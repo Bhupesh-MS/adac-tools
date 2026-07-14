@@ -44,15 +44,16 @@ export async function generateDiagramSvg(
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
-  skipOptimizer: boolean = false
+  skipOptimizer: boolean = false,
+  validateCost: boolean = false
 ): Promise<GenerationResult> {
-  if (validate) {
+  if (validateCost) {
     const adac = parseAdacFromContent(inputContent, { validate: false });
     const validation = validateAdacCostConfig(adac);
 
     if (!validation.valid) {
       throw new Error(
-        `Schema validation failed:\n${validation.errors?.join('\n')}`
+        `Cost validation failed:\n${validation.errors?.join('\n')}`
       );
     }
   }
@@ -60,7 +61,7 @@ export async function generateDiagramSvg(
   return coreGenerateDiagramSvg(
     inputContent,
     layoutOverride,
-    false,
+    validate,
     costData,
     period,
     skipOptimizer,

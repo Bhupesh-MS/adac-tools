@@ -34,7 +34,7 @@ vi.mock('@mindfiredigital/adac-cli', () => ({
 vi.mock('@mindfiredigital/adac-core', () => ({
   generateDiagram: vi.fn(),
   parseAdac: vi.fn(),
-  validateAdacConfig: vi.fn(),
+  validateAdacCostConfig: vi.fn(),
 }));
 
 vi.mock('@mindfiredigital/adac-cost', () => ({
@@ -73,7 +73,7 @@ describe('cli.ts', () => {
     const runCLIArg = vi.mocked(runCLI).mock.calls[0][0];
     expect(runCLIArg.version).toBe('1.2.3');
     expect(runCLIArg.parseAdac).toBe(parseAdac);
-    expect(runCLIArg.validateAdacConfig).toBe(validateAdacCostConfig);
+    expect(runCLIArg.validateAdacCostConfig).toBe(validateAdacCostConfig);
     expect(runCLIArg.calculateCostFromYaml).toBe(aggregateCostFromYaml);
   });
 

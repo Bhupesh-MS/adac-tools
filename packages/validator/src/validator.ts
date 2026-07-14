@@ -61,8 +61,19 @@ function extendProperties(
     return;
   }
 
+  const existingProperties =
+    (target.properties as Record<string, JsonSchema> | undefined) ?? {};
+
+  for (const key of Object.keys(properties)) {
+    if (key in existingProperties) {
+      throw new Error(
+        `Extension cannot override core ADAC schema property: ${key}`
+      );
+    }
+  }
+
   target.properties = {
-    ...((target.properties as JsonSchema | undefined) ?? {}),
+    ...existingProperties,
     ...properties,
   };
 }
@@ -122,23 +133,34 @@ export function validateAdacConfig(
       }
     };
 
-    typedConfig.applications?.forEach((app, index) => {
-      checkId(app.id, `/applications/${index}`);
-    });
-
-    typedConfig.infrastructure?.clouds?.forEach((cloud, cloudIndex) => {
-      checkId(cloud.id, `/infrastructure/clouds/${cloudIndex}`);
-      cloud.services?.forEach((service, serviceIndex) => {
-        checkId(
-          service.id,
-          `/infrastructure/clouds/${cloudIndex}/services/${serviceIndex}`
-        );
+    if (Array.isArray(typedConfig.applications)) {
+      typedConfig.applications.forEach((app, index) => {
+        checkId(app?.id, `/applications/${index}`);
       });
-    });
+    }
 
-    typedConfig.connections?.forEach((conn, index) => {
-      checkId(conn.id, `/connections/${index}`);
-    });
+    if (
+      typedConfig.infrastructure &&
+      Array.isArray(typedConfig.infrastructure.clouds)
+    ) {
+      typedConfig.infrastructure.clouds.forEach((cloud, cloudIndex) => {
+        checkId(cloud?.id, `/infrastructure/clouds/${cloudIndex}`);
+        if (cloud && Array.isArray(cloud.services)) {
+          cloud.services.forEach((service, serviceIndex) => {
+            checkId(
+              service?.id,
+              `/infrastructure/clouds/${cloudIndex}/services/${serviceIndex}`
+            );
+          });
+        }
+      });
+    }
+
+    if (Array.isArray(typedConfig.connections)) {
+      typedConfig.connections.forEach((conn, index) => {
+        checkId(conn?.id, `/connections/${index}`);
+      });
+    }
   }
 
   for (const extension of options.extensions ?? []) {

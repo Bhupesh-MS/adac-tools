@@ -46,7 +46,7 @@ runCLI({
   parseAdac: (input) => {
     /* ... */
   },
-  validateAdacConfig: (config) => ({ valid: true }),
+  validateAdacCostConfig: (config) => ({ valid: true }),
 });
 ```
 
@@ -103,7 +103,7 @@ export type CLIOptions = {
     validate?: boolean
   ) => Promise<void>;
   parseAdac: (input: string, options?: Record<string, unknown>) => unknown;
-  validateAdacConfig: (config: unknown) => {
+  validateAdacCostConfig: (config: unknown) => {
     valid: boolean;
     errors?: string[];
   };

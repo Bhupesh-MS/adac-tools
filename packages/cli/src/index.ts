@@ -36,7 +36,7 @@ export type CLIOptions = {
     validate?: boolean
   ) => Promise<void>;
   parseAdac: (input: string, options?: Record<string, unknown>) => unknown;
-  validateAdacConfig: (config: unknown) => {
+  validateAdacCostConfig: (config: unknown) => {
     valid: boolean;
     errors?: string[];
   };
@@ -215,7 +215,7 @@ export function runCLI(options: CLIOptions) {
         console.log(`Validating ${inputPath}...`);
 
         const config = options.parseAdac(inputPath, { validate: false });
-        const result = options.validateAdacConfig(config);
+        const result = options.validateAdacCostConfig(config);
 
         if (result.valid) {
           console.log('✅ Validation passed.');

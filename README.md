@@ -21,6 +21,8 @@ While this monorepo contains many packages, **only the following are officially 
 
 Other packages (like parsers, layouts, and web interfaces) are either bundled into the above releases or used internally for development and testing.
 
+**Full Monorepo Package Inventory:**
+
 | Package                                | Description                     | Key Responsibilities                                                            |
 | :------------------------------------- | :------------------------------ | :------------------------------------------------------------------------------ |
 | **`@mindfiredigital/adac-core`**       | The brain of the system.        | Orchestrates parsing, validation, compliance, **optimization**, and rendering.  |

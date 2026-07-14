@@ -73,6 +73,6 @@ runCLI({
     console.log(`Terraform files written to ${targetDir}`);
   },
   parseAdac,
-  validateAdacConfig: validateAdacCostConfig,
+  validateAdacCostConfig,
   version,
 });

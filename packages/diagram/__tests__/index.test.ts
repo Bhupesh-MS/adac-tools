@@ -55,7 +55,15 @@ infrastructure:
             currency: USD
 `;
 
-    const result = await Module.generateDiagramSvg(yaml, 'custom', true);
+    const result = await Module.generateDiagramSvg(
+      yaml,
+      'custom',
+      false,
+      undefined,
+      'monthly',
+      false,
+      true
+    );
 
     expect(result.svg).toContain('<svg');
   });
@@ -80,8 +88,16 @@ infrastructure:
 `;
 
     await expect(
-      Module.generateDiagramSvg(yaml, 'custom', true)
-    ).rejects.toThrow('Schema validation failed');
+      Module.generateDiagramSvg(
+        yaml,
+        'custom',
+        false,
+        undefined,
+        'monthly',
+        false,
+        true
+      )
+    ).rejects.toThrow('Cost validation failed');
   });
 
   it('should generate diagrams and handle fully compliant services correctly', async () => {

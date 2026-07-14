@@ -1,5 +1,9 @@
 // Entry point for @mindfiredigital/adac-diagram
-export * from '@mindfiredigital/adac-core';
+export type {
+  GenerationResult,
+  ComplianceTooltipMap,
+  ComplianceTooltipProvider,
+} from '@mindfiredigital/adac-core';
 export { generateDiagram, generateDiagramSvg } from './generator.js';
 export { parseAdac, parseAdacFromContent } from '@mindfiredigital/adac-parser';
 export {

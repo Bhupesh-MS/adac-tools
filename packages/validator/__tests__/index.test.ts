@@ -56,6 +56,26 @@ describe('Adac Validator', () => {
     expect(result.errors!.length).toBeGreaterThan(0);
   });
 
+  it('should handle malformed containers without throwing', () => {
+    const malformedConfig1 = {
+      applications: 'not-an-array',
+    };
+    const result1 = validateAdacConfig(malformedConfig1);
+    expect(result1.valid).toBe(false);
+
+    const malformedConfig2 = {
+      infrastructure: {
+        clouds: [
+          {
+            services: 'not-an-array',
+          },
+        ],
+      },
+    };
+    const result2 = validateAdacConfig(malformedConfig2);
+    expect(result2.valid).toBe(false);
+  });
+
   it('should report duplicate IDs across the config', () => {
     const result = validateAdacConfig({
       ...validConfig,
@@ -122,5 +142,46 @@ describe('Adac Validator', () => {
     );
 
     expect(result).toEqual({ valid: true });
+  });
+
+  it('should reject extensions that redefine core properties', () => {
+    expect(() =>
+      validateAdacConfig(validConfig, {
+        extensions: [
+          {
+            name: 'override-version',
+            rootProperties: {
+              version: { type: 'string' },
+            },
+          },
+        ],
+      })
+    ).toThrow('Extension cannot override core ADAC schema property: version');
+
+    expect(() =>
+      validateAdacConfig(validConfig, {
+        extensions: [
+          {
+            name: 'override-id',
+            awsServiceProperties: {
+              id: { type: 'string' },
+            },
+          },
+        ],
+      })
+    ).toThrow('Extension cannot override core ADAC schema property: id');
+
+    expect(() =>
+      validateAdacConfig(validConfig, {
+        extensions: [
+          {
+            name: 'override-service',
+            gcpServiceProperties: {
+              service: { type: 'string' },
+            },
+          },
+        ],
+      })
+    ).toThrow('Extension cannot override core ADAC schema property: service');
   });
 });
