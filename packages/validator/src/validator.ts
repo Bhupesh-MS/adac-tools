@@ -111,12 +111,26 @@ export function validateAdacConfig(
     const ajvErrors = (validate.errors || []) as {
       instancePath: string;
       message?: string;
+      keyword?: string;
+      params?: Record<string, unknown>;
     }[];
-    errors.push(
-      ...(ajvErrors.map(
-        (err) => `${err.instancePath} ${err.message || 'Invalid value'}`
-      ) || ['Unknown schema error'])
+
+    // Ignore legacy 'cost' fields when validating without the cost extension
+    const filteredErrors = ajvErrors.filter(
+      (err) =>
+        !(
+          err.keyword === 'additionalProperties' &&
+          err.params?.additionalProperty === 'cost'
+        )
     );
+
+    if (filteredErrors.length > 0) {
+      errors.push(
+        ...filteredErrors.map(
+          (err) => `${err.instancePath} ${err.message || 'Invalid value'}`
+        )
+      );
+    }
   }
 
   // Ensure instance IDs are unique across the entire configuration
