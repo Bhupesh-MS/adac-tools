@@ -1,10 +1,6 @@
 // ─── Severity levels ────────────────────────────────────────────────────────
 export type OptimizationSeverity =
-  | 'critical'
-  | 'high'
-  | 'medium'
-  | 'low'
-  | 'info';
+  'critical' | 'high' | 'medium' | 'low' | 'info';
 
 // ─── Optimization categories ─────────────────────────────────────────────────
 export type OptimizationCategory =

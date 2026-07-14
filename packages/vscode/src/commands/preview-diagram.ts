@@ -4,8 +4,7 @@ import * as path from 'path';
 
 // Use the same generation pipeline as the CLI
 let generateDiagramSvg:
-  | typeof import('@mindfiredigital/adac-core').generateDiagramSvg
-  | undefined;
+  typeof import('@mindfiredigital/adac-core').generateDiagramSvg | undefined;
 
 /**
  * Find the adac-tools monorepo root by checking workspace folders

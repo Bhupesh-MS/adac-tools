@@ -8,7 +8,7 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   minify: false,
-  shims: true,
+  shims: false,
   // Bundle internal workspace packages and key external dependencies
   noExternal: [
     '@mindfiredigital/adac-parser',
