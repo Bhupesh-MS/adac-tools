@@ -89,7 +89,7 @@ try {
 
 ## API Reference
 
-### `generateDiagramSvg(yaml, layoutEngine?, validate?, costData?, period?, skipOptimizer?, complianceProvider?)`
+### `generateDiagramSvg(yaml, layoutEngine?, validate?, costData?, period?, skipOptimizer?, complianceProvider?, iconResolver?)`
 
 Generates an SVG diagram from YAML content. Runs the architecture optimizer automatically. Compliance checks are supplied by callers through `complianceProvider`; `@mindfiredigital/adac-diagram` wires this provider to `@mindfiredigital/adac-compliance` for the full CLI/distribution experience.
 
@@ -102,6 +102,7 @@ Generates an SVG diagram from YAML content. Runs the architecture optimizer auto
 | `period`             | `'hourly' \| 'daily' \| 'monthly' \| 'yearly'`                    | `'monthly'` | Cost display period                           |
 | `skipOptimizer`      | `boolean`                                                         | `false`     | Set `true` to skip optimization analysis      |
 | `complianceProvider` | `(adac) => ComplianceTooltipMap \| Promise<ComplianceTooltipMap>` | —           | Optional provider for compliance tooltip data |
+| `iconResolver`       | `(iconName) => Promise<string \| null>`                           | —           | Optional browser icon asset resolver          |
 
 **Returns:** `Promise<GenerationResult>`
 
@@ -116,7 +117,7 @@ interface GenerationResult {
 
 ---
 
-### `generateDiagram(input, output, layoutEngine?, validate?, costData?, period?, skipOptimizer?, complianceProvider?)`
+### `generateDiagram(input, output, layoutEngine?, validate?, costData?, period?, skipOptimizer?, complianceProvider?, iconResolver?)`
 
 File-based wrapper around `generateDiagramSvg`. Reads the YAML from `input` and writes the SVG to `output`.
 

@@ -13,7 +13,7 @@ program
   .argument('<file>', 'Path to ADAC YAML file')
   .option('-o, --output <file>', 'Output path for JSON graph')
   .option('--no-validate', 'Skip schema validation')
-  .action((file, opts) => {
+  .action(async (file, opts) => {
     try {
       const inputPath = path.resolve(process.cwd(), file);
       const validate = opts.validate !== false;
@@ -21,7 +21,7 @@ program
       console.log(`Building ELK graph from ${inputPath}...`);
 
       const config = parseAdac(inputPath, { validate });
-      const graph = buildElkGraph(config);
+      const graph = await buildElkGraph(config);
 
       const jsonGraph = JSON.stringify(graph, null, 2);
 

@@ -30,6 +30,7 @@ export async function generateDiagramBrowser(
     undefined,
     'monthly',
     false,
+    undefined,
     iconResolver
   );
 }

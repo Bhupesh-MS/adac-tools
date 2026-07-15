@@ -22,6 +22,8 @@ export type ComplianceTooltipProvider = (
   adac: AdacConfig
 ) => ComplianceTooltipMap | Promise<ComplianceTooltipMap>;
 
+export type IconResolver = (iconName: string) => Promise<string | null>;
+
 export interface GenerationResult {
   svg: string;
   logs: string[];
@@ -38,7 +40,8 @@ export async function generateDiagramSvg(
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
   skipOptimizer: boolean = false,
-  complianceProvider?: ComplianceTooltipProvider
+  complianceProvider?: ComplianceTooltipProvider,
+  iconResolver?: IconResolver
 ): Promise<GenerationResult> {
   const logs: string[] = [];
   const start = Date.now();
@@ -80,7 +83,7 @@ export async function generateDiagramSvg(
       }
     }
 
-    const graph = buildElkGraph(adac);
+    const graph = await buildElkGraph(adac);
     const engine = layoutOverride || adac.layout || 'custom';
 
     let complianceTooltipMap: ComplianceTooltipMap | undefined;
@@ -122,7 +125,8 @@ export async function generateDiagramSvg(
       complianceTooltipMap,
       optimizationTooltipMap,
       costData,
-      period
+      period,
+      iconResolver
     );
 
     const duration = Date.now() - start;
@@ -146,7 +150,8 @@ export async function generateDiagram(
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
   skipOptimizer: boolean = false,
-  complianceProvider?: ComplianceTooltipProvider
+  complianceProvider?: ComplianceTooltipProvider,
+  iconResolver?: IconResolver
 ): Promise<void> {
   const raw = await fs.readFile(input, 'utf8');
   const { svg } = await generateDiagramSvg(
@@ -156,7 +161,8 @@ export async function generateDiagram(
     costData,
     period,
     skipOptimizer,
-    complianceProvider
+    complianceProvider,
+    iconResolver
   );
   await fs.outputFile(output, svg);
   console.log(`Diagram generated: ${output}`);
