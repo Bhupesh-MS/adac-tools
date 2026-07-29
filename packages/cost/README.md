@@ -47,7 +47,27 @@ packages/cost/
   README.md
 ```
 
-## Cost-aware validation
+## Run Standalone
+
+This package exposes the `adac-cost` binary.
+
+After installing the package:
+
+```bash
+adac-cost architecture.adac.yaml --period monthly --pricing on_demand
+```
+
+From the monorepo root:
+
+```bash
+pnpm --filter @mindfiredigital/adac-cost build
+node packages/cost/dist/cli.js yamls/aws.adac.yaml --period yearly --pricing reserved
+```
+
+The command prints the total estimate plus compute, database, storage, and
+networking breakdowns.
+
+## Cost-aware Validation
 
 The generic `@mindfiredigital/adac-validator` package validates the core ADAC
 schema only. Use this package when your ADAC files include `cost` fields:

@@ -23,7 +23,21 @@ To use it in another workspace package, add it to your `package.json`:
 }
 ```
 
-## Usage
+## Run Standalone
+
+This package exposes the `adac-layout-elk` binary inside the workspace. It
+parses an ADAC YAML file and writes the generated ELK graph JSON.
+
+From the monorepo root:
+
+```bash
+pnpm --filter @mindfiredigital/adac-layout-elk build
+node packages/layout-elk/dist/cli.js yamls/aws.adac.yaml --output ./elk-graph.json
+```
+
+If `--output` is omitted, the ELK graph JSON is printed to stdout.
+
+## Programmatic Usage
 
 ```typescript
 import { layoutWithELK } from '@mindfiredigital/adac-layout-elk';

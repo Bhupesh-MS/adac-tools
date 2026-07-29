@@ -14,15 +14,23 @@ Express API server for ADAC diagram generation, compliance checking, cost analys
 
 ## Installation & Start
 
+## Run Standalone
+
+This package is the standalone Express API server.
+
 ```bash
 # From monorepo root
-cd packages/web-server
 pnpm install
-pnpm build
-pnpm start       # http://localhost:3000
+pnpm --filter @mindfiredigital/adac-web-server build
+pnpm --filter @mindfiredigital/adac-web-server start
+```
 
-# Development
-pnpm dev
+The server listens on `http://localhost:3000` by default.
+
+For development:
+
+```bash
+pnpm --filter @mindfiredigital/adac-web-server dev
 ```
 
 ## Environment Variables
