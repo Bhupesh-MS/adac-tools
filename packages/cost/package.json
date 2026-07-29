@@ -26,9 +26,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mindfiredigital/adac-validator": "workspace:*",
     "js-yaml": "^4.1.1",
-    "commander": "^12.0.0",
-    "@mindfiredigital/adac-parser": "workspace:*"
+    "commander": "^12.0.0"
   },
   "devDependencies": {
     "@aws-sdk/client-pricing": "^3.1031.0",

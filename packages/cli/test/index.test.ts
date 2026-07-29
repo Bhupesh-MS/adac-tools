@@ -12,7 +12,7 @@ describe('ADAC CLI', () => {
   const mockOptions = {
     generateDiagram: vi.fn().mockResolvedValue(undefined),
     parseAdac: vi.fn().mockReturnValue({}),
-    validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+    validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
     version: '1.0.0',
   };
 
@@ -39,7 +39,7 @@ describe('ADAC CLI', () => {
 
     await runCLI(mockOptions);
 
-    expect(mockOptions.validateAdacConfig).toBeDefined();
+    expect(mockOptions.validateAdacCostConfig).toBeDefined();
     process.argv = originalArgv;
     (process as unknown as { exit: typeof process.exit }).exit = originalExit;
   });
@@ -52,7 +52,7 @@ describe('ADAC CLI', () => {
     (process as unknown as { exit: typeof process.exit }).exit =
       mockExit as unknown as typeof process.exit;
 
-    mockOptions.validateAdacConfig.mockReturnValueOnce({
+    mockOptions.validateAdacCostConfig.mockReturnValueOnce({
       valid: false,
       errors: ['Invalid'],
     });
@@ -103,7 +103,7 @@ describe('ADAC CLI - cost command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       calculateCostFromYaml,
       version: '1.0.0',
     };
@@ -121,7 +121,7 @@ describe('ADAC CLI - cost command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
       // no calculateCostFromYaml
     };
@@ -140,7 +140,7 @@ describe('ADAC CLI - cost command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       calculateCostFromYaml: vi.fn().mockImplementation(() => {
         throw new Error('Pricing data unavailable');
       }),
@@ -164,7 +164,7 @@ describe('ADAC CLI - cost command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       calculateCostFromYaml,
       version: '1.0.0',
     };
@@ -193,7 +193,7 @@ describe('ADAC CLI - cost command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       calculateCostFromYaml,
       version: '1.0.0',
     };
@@ -239,7 +239,7 @@ describe('ADAC CLI - terraform command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       generateTerraformFromYaml,
       version: '1.0.0',
     };
@@ -261,7 +261,7 @@ describe('ADAC CLI - terraform command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       generateTerraformFromYaml,
       version: '1.0.0',
     };
@@ -287,7 +287,7 @@ describe('ADAC CLI - terraform command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
       // no generateTerraformFromYaml
     };
@@ -306,7 +306,7 @@ describe('ADAC CLI - terraform command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       generateTerraformFromYaml: vi
         .fn()
         .mockRejectedValue(new Error('Terraform error')),
@@ -328,7 +328,7 @@ describe('ADAC CLI - terraform command', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       generateTerraformFromYaml,
       version: '1.0.0',
     };
@@ -384,7 +384,7 @@ describe('ADAC CLI - diagram command with --cost flag', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       calculateCostFromYaml,
       version: '1.0.0',
     };
@@ -400,7 +400,7 @@ describe('ADAC CLI - diagram command with --cost flag', () => {
     const options = {
       generateDiagram,
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
       // no calculateCostFromYaml
     };
@@ -499,7 +499,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram,
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
     };
 
@@ -523,7 +523,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram,
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
     };
 
@@ -540,7 +540,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({
+      validateAdacCostConfig: vi.fn().mockReturnValue({
         valid: false,
         errors: ['Missing version', 'Missing infrastructure'],
       }),
@@ -561,7 +561,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({
+      validateAdacCostConfig: vi.fn().mockReturnValue({
         valid: false,
         errors: [],
       }),
@@ -578,7 +578,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({
+      validateAdacCostConfig: vi.fn().mockReturnValue({
         valid: false,
         errors: ['Schema validation failed', 'Unsupported resource type'],
       }),
@@ -600,7 +600,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram: vi.fn().mockRejectedValue(new Error('Bad YAML syntax')),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
     };
 
@@ -627,7 +627,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram: vi.fn().mockResolvedValue(undefined),
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       calculateCostFromYaml,
       version: '1.0.0',
     };
@@ -653,7 +653,7 @@ describe('ADAC CLI - Branch Coverage', () => {
     const options = {
       generateDiagram,
       parseAdac: vi.fn().mockReturnValue({}),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
     };
 
@@ -671,7 +671,7 @@ describe('ADAC CLI - Branch Coverage', () => {
       parseAdac: vi.fn().mockImplementation(() => {
         throw new Error('YAML parsing failed');
       }),
-      validateAdacConfig: vi.fn().mockReturnValue({ valid: true }),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
       version: '1.0.0',
     };
 

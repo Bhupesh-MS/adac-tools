@@ -25,7 +25,7 @@ describe('CLI', () => {
     ),
     generateTerraformFromYaml: vi.fn(async () => {}),
     parseAdac: vi.fn((input: string) => ({ parsed: input })),
-    validateAdacConfig: vi.fn(() => ({
+    validateAdacCostConfig: vi.fn(() => ({
       valid: true,
       errors: undefined,
     })),
@@ -42,7 +42,7 @@ describe('CLI', () => {
       const options: CLIOptions = {
         generateDiagram: async () => {},
         parseAdac: () => ({}),
-        validateAdacConfig: () => ({ valid: true }),
+        validateAdacCostConfig: () => ({ valid: true }),
         version: '0.1.0',
       };
 
@@ -55,7 +55,7 @@ describe('CLI', () => {
         'version',
         'generateDiagram',
         'parseAdac',
-        'validateAdacConfig',
+        'validateAdacCostConfig',
       ];
 
       for (const option of requiredOptions) {
@@ -73,8 +73,8 @@ describe('CLI', () => {
       expect(typeof mockCLIOptions.parseAdac).toBe('function');
     });
 
-    it('should define validateAdacConfig function', () => {
-      expect(typeof mockCLIOptions.validateAdacConfig).toBe('function');
+    it('should define validateAdacCostConfig function', () => {
+      expect(typeof mockCLIOptions.validateAdacCostConfig).toBe('function');
     });
 
     it('should define version string', () => {
@@ -267,7 +267,7 @@ describe('CLI', () => {
 
   describe('ADAC Validation', () => {
     it('should validate configuration structure', () => {
-      const result = mockCLIOptions.validateAdacConfig({
+      const result = mockCLIOptions.validateAdacCostConfig({
         version: '1.0',
         infrastructure: { name: 'Test' },
       });
@@ -280,7 +280,7 @@ describe('CLI', () => {
       const invalidConfigs = [{}, { version: '1.0' }, { infrastructure: {} }];
 
       for (const config of invalidConfigs) {
-        const result = mockCLIOptions.validateAdacConfig(config);
+        const result = mockCLIOptions.validateAdacCostConfig(config);
         expect(typeof result.valid).toBe('boolean');
       }
     });
@@ -355,7 +355,7 @@ describe('CLI', () => {
     });
 
     it('should handle missing infrastructure key', () => {
-      const result = mockCLIOptions.validateAdacConfig({ version: '1.0' });
+      const result = mockCLIOptions.validateAdacCostConfig({ version: '1.0' });
 
       expect(result).toHaveProperty('valid');
     });

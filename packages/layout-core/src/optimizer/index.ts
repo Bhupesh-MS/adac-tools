@@ -1,4 +1,4 @@
-import type { AdacConfig } from '..';
+import type { AdacConfig } from '@mindfiredigital/adac-validator';
 import { OptimizerEngine } from './optimizer';
 import type { OptimizerOptions, OptimizationResult } from './types/index';
 

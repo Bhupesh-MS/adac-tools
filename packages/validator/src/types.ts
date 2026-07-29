@@ -38,7 +38,6 @@ export interface AdacService {
   description?: string;
   runs?: string[];
   configuration?: Record<string, unknown>;
-  cost?: Record<string, unknown>;
   monitoring?: Record<string, unknown>;
   compliance?: string[];
   tags?: Record<string, string>;
@@ -88,7 +87,6 @@ export interface GcpService {
   runs?: string[];
   configuration?: Record<string, unknown>;
   config?: Record<string, unknown>;
-  cost?: Record<string, unknown>;
   monitoring?: Record<string, unknown>;
   compliance?: string[];
   tags?: Record<string, string>;
@@ -143,6 +141,5 @@ export interface AdacConfig {
     clouds: AdacCloud[];
   };
   connections?: AdacConnection[];
-  cost?: Record<string, unknown>;
   layout?: 'elk' | 'custom';
 }

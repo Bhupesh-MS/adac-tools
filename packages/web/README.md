@@ -11,6 +11,27 @@ The ADAC Visual Architecture Editor. This is a React-based web application for d
 
 ## Getting Started
 
+## Run Standalone
+
+This package is the standalone React/Vite web application.
+
+From the monorepo root:
+
+```bash
+pnpm install
+pnpm --filter @mindfiredigital/adac-web dev
+```
+
+For a production preview:
+
+```bash
+pnpm --filter @mindfiredigital/adac-web build
+pnpm --filter @mindfiredigital/adac-web preview
+```
+
+The `dev` script runs `setup:icons` first, so the web app has the AWS, Azure,
+and GCP icon assets it needs.
+
 ### Prerequisites
 
 Ensure you have run the following in the root directory:

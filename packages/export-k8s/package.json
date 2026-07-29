@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@mindfiredigital/adac-parser": "workspace:*",
-    "@mindfiredigital/adac-layout-core": "workspace:*",
+    "@mindfiredigital/adac-validator": "workspace:*",
     "js-yaml": "^4.1.1",
     "commander": "^12.0.0"
   },

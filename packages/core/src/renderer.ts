@@ -1,7 +1,6 @@
 import ELK from 'elkjs';
 import { type ElkNode, type ElkEdge } from '@mindfiredigital/adac-layout-elk';
-
-import { createLayoutEngine } from '@mindfiredigital/adac-layout';
+import { CustomLayoutEngine } from '@mindfiredigital/adac-layout-core';
 import { routeAStar } from './routing';
 
 let fsPromise: Promise<typeof import('fs-extra')> | undefined;
@@ -545,7 +544,7 @@ export async function renderSvg(
         !hasStructuralChildren
       ) {
         // Use the core engine for rank-based layout when there are edges
-        const engine = await createLayoutEngine('custom', {
+        const engine = new CustomLayoutEngine({
           rankdir: 'TB',
           nodesep: NODE_GAP_X,
           ranksep: NODE_GAP_Y,

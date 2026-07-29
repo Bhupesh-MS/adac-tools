@@ -1,6 +1,6 @@
 # @mindfiredigital/adac-core
 
-Core integration package for ADAC — brings together parsing, validation, layout engines, compliance checking, and **architecture optimization** to orchestrate diagram generation.
+Core integration package for ADAC — brings together parsing, validation, graph building, SVG rendering, and **architecture optimization** to orchestrate diagram generation.
 
 **Note:** This package is released and distributed as an npm module.
 
@@ -8,7 +8,7 @@ Core integration package for ADAC — brings together parsing, validation, layou
 
 - 🎯 Unified orchestration of parsing, validation, and rendering
 - 🎨 Multiple layout engine support (ELK and Custom)
-- ✅ Compliance validation integration (auto-detected from YAML)
+- ✅ Accepts precomputed compliance tooltip metadata from higher-level packages
 - 🔍 **Architecture optimizer** — runs automatically, produces prioritised recommendations
 - 📦 Zero external runtime dependencies (bundled)
 - 🔄 Async/await support
@@ -89,18 +89,20 @@ try {
 
 ## API Reference
 
-### `generateDiagramSvg(yaml, layoutEngine?, validate?, costData?, period?, skipOptimizer?)`
+### `generateDiagramSvg(yaml, layoutEngine?, validate?, costData?, period?, skipOptimizer?, complianceProvider?, iconResolver?)`
 
-Generates an SVG diagram from YAML content. Runs compliance checks and the architecture optimizer automatically.
+Generates an SVG diagram from YAML content. Runs the architecture optimizer automatically. Compliance checks are supplied by callers through `complianceProvider`; `@mindfiredigital/adac-diagram` wires this provider to `@mindfiredigital/adac-compliance` for the full CLI/distribution experience.
 
-| Parameter       | Type                                           | Default     | Description                              |
-| --------------- | ---------------------------------------------- | ----------- | ---------------------------------------- |
-| `yaml`          | `string`                                       | —           | ADAC YAML configuration content          |
-| `layoutEngine`  | `'elk' \| 'custom'`                            | `'elk'`     | Graph layout algorithm                   |
-| `validate`      | `boolean`                                      | `false`     | Run schema validation before layout      |
-| `costData`      | `Record<string, number>`                       | —           | Per-service cost overrides (optional)    |
-| `period`        | `'hourly' \| 'daily' \| 'monthly' \| 'yearly'` | `'monthly'` | Cost display period                      |
-| `skipOptimizer` | `boolean`                                      | `false`     | Set `true` to skip optimization analysis |
+| Parameter            | Type                                                              | Default     | Description                                   |
+| -------------------- | ----------------------------------------------------------------- | ----------- | --------------------------------------------- |
+| `yaml`               | `string`                                                          | —           | ADAC YAML configuration content               |
+| `layoutEngine`       | `'elk' \| 'custom'`                                               | `'elk'`     | Graph layout algorithm                        |
+| `validate`           | `boolean`                                                         | `false`     | Run schema validation before layout           |
+| `costData`           | `Record<string, number>`                                          | —           | Per-service cost overrides (optional)         |
+| `period`             | `'hourly' \| 'daily' \| 'monthly' \| 'yearly'`                    | `'monthly'` | Cost display period                           |
+| `skipOptimizer`      | `boolean`                                                         | `false`     | Set `true` to skip optimization analysis      |
+| `complianceProvider` | `(adac) => ComplianceTooltipMap \| Promise<ComplianceTooltipMap>` | —           | Optional provider for compliance tooltip data |
+| `iconResolver`       | `(iconName) => Promise<string \| null>`                           | —           | Optional browser icon asset resolver          |
 
 **Returns:** `Promise<GenerationResult>`
 
@@ -115,7 +117,7 @@ interface GenerationResult {
 
 ---
 
-### `generateDiagram(input, output, layoutEngine?, validate?, costData?, period?, skipOptimizer?)`
+### `generateDiagram(input, output, layoutEngine?, validate?, costData?, period?, skipOptimizer?, complianceProvider?, iconResolver?)`
 
 File-based wrapper around `generateDiagramSvg`. Reads the YAML from `input` and writes the SVG to `output`.
 
@@ -125,7 +127,7 @@ File-based wrapper around `generateDiagramSvg`. Reads the YAML from `input` and 
 
 ```typescript
 export { parseAdac, parseAdacFromContent } from '@mindfiredigital/adac-parser';
-export { validateAdacConfig } from '@mindfiredigital/adac-schema';
+export { validateAdacConfig } from '@mindfiredigital/adac-validator';
 export { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
 ```
 
@@ -135,9 +137,8 @@ export { buildElkGraph } from '@mindfiredigital/adac-layout-elk';
 YAML input
   │
   ├─ parseAdacFromContent()     ← adac-parser
-  ├─ validateAdacConfig()       ← adac-schema        (if validate=true)
-  ├─ OptimizerEngine.analyze()  ← adac-optimizer     (unless skipOptimizer)
-  ├─ ComplianceChecker()        ← adac-compliance
+  ├─ validateAdacConfig()       ← adac-validator        (if validate=true)
+  ├─ complianceProvider()       ← optional caller-supplied tooltip metadata
   ├─ buildElkGraph()            ← adac-layout-elk
   ├─ renderSvg()                ← internal renderer
   └─ GenerationResult { svg, logs, duration, optimizationResult }
@@ -145,9 +146,8 @@ YAML input
 
 ## See Also
 
-- [@mindfiredigital/adac-optimizer](../optimizer) — Architecture optimization rules
 - [@mindfiredigital/adac-parser](../parser) — YAML parsing
-- [@mindfiredigital/adac-schema](../schema) — Schema validation
+- [@mindfiredigital/adac-validator](../validator) — Validation
 - [@mindfiredigital/adac-diagram](../diagram) — Distribution package & CLI
 
 ## License

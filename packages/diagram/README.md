@@ -10,10 +10,16 @@ Core diagram generation logic and CLI for ADAC (Architecture Diagram As Code). I
 - **Multiple Layout Engines**: ELK (`elkjs`), and Custom
 - **SVG Rendering**: High-quality SVG output with embedded icons and styling
 - **Validation**: Integrated schema validation before generation
+- **Compliance**: Automatically checks declared compliance frameworks and passes tooltip metadata into the core renderer
 - **🔍 Optimizer**: Automatic architecture optimization recommendations (cost, security, reliability) printed to the console on every run
 - **💡 Interactive Tooltips**: Generated SVGs embed cost, compliance, and optimization metadata directly into node tooltips for easy inspection.
 
 ## CLI Usage
+
+## Run Standalone
+
+This package exposes the `adac` binary and can be run as the main standalone
+ADAC CLI.
 
 ### Install globally
 
@@ -44,9 +50,16 @@ adac diagram architecture.adac.yaml --no-optimize
 ### Local development (from monorepo root)
 
 ```bash
+pnpm --filter @mindfiredigital/adac-diagram build
 pnpm cli diagram yamls/aws.adac.yaml -o test_aws.svg
 pnpm cli diagram yamls/gcp.adac.yaml -o test_gcp.svg
 pnpm cli diagram yamls/aws.adac.yaml --no-optimize -o test_aws.svg
+```
+
+You can also run the package binary directly after building:
+
+```bash
+node packages/diagram/dist/cli.js diagram yamls/aws.adac.yaml -o test_aws.svg --no-open
 ```
 
 ### All `diagram` options
@@ -101,7 +114,6 @@ if (optimizationResult) {
 
 ## See Also
 
-- [@mindfiredigital/adac-optimizer](../optimizer) — Architecture optimization rules
 - [@mindfiredigital/adac-core](../core) — Core generation engine
 - [@mindfiredigital/adac-cli](../cli) — CLI argument parsing
 - [@mindfiredigital/adac-compliance](../compliance) — Compliance checking

@@ -12,6 +12,27 @@ Generate Kubernetes manifests from ADAC architecture definitions.
 
 ## Usage
 
+## Run Standalone
+
+This package exposes the `adac-export-k8s` binary.
+
+After installing the package:
+
+```bash
+adac-export-k8s architecture.adac.yaml --namespace default --output ./k8s-out
+```
+
+From the monorepo root:
+
+```bash
+pnpm --filter @mindfiredigital/adac-export-k8s build
+node packages/export-k8s/dist/cli.js yamls/kubernetes.adac.yaml --namespace default --output ./k8s-out
+```
+
+If `--output` is omitted, the generated manifests are printed to stdout.
+
+## Programmatic Usage
+
 ```ts
 import { generateK8sManifestsFromAdacFile } from '@mindfiredigital/adac-export-k8s';
 

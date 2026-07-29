@@ -26,6 +26,7 @@
     "handlebars": "^4.7.9",
     "marked": "^15.0.0",
     "@mindfiredigital/adac-layout-core": "workspace:*",
+    "@mindfiredigital/adac-validator": "workspace:*",
     "@mindfiredigital/adac-parser": "workspace:*",
     "@mindfiredigital/adac-compliance": "workspace:*"
   },

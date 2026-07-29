@@ -1,4 +1,4 @@
-import type { AdacConfig } from '@mindfiredigital/adac-layout-core';
+import type { AdacConfig } from '@mindfiredigital/adac-validator';
 
 export const gcpMicroservices: AdacConfig = {
   version: '0.1',

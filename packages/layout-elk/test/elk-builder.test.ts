@@ -1,7 +1,7 @@
 import { describe, it, expect, vitest } from 'vitest';
 import { buildElkGraph } from '../src/elk-builder.js';
 import fs from 'fs';
-import { AdacConfig } from '@mindfiredigital/adac-layout-core';
+import type { AdacConfig } from '@mindfiredigital/adac-validator';
 
 describe('ELK Builder', () => {
   it('should build an empty ELK graph from an empty AdacConfig', async () => {

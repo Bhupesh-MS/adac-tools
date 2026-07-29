@@ -46,7 +46,7 @@ runCLI({
   parseAdac: (input) => {
     /* ... */
   },
-  validateAdacConfig: (config) => ({ valid: true }),
+  validateAdacCostConfig: (config) => ({ valid: true }),
 });
 ```
 
@@ -103,7 +103,7 @@ export type CLIOptions = {
     validate?: boolean
   ) => Promise<void>;
   parseAdac: (input: string, options?: Record<string, unknown>) => unknown;
-  validateAdacConfig: (config: unknown) => {
+  validateAdacCostConfig: (config: unknown) => {
     valid: boolean;
     errors?: string[];
   };
@@ -115,7 +115,6 @@ export type CLIOptions = {
 
 - [@mindfiredigital/adac-diagram](../diagram) — Main CLI distribution
 - [@mindfiredigital/adac-core](../core) — Core engine
-- [@mindfiredigital/adac-optimizer](../optimizer) — Optimization rules
 
 ## License
 

@@ -24,8 +24,7 @@
   },
   "dependencies": {
     "elkjs": "^0.11.1",
-    "@mindfiredigital/adac-compliance": "workspace:*",
-    "@mindfiredigital/adac-layout": "workspace:*"
+    "@mindfiredigital/adac-validator": "workspace:*"
   },
   "devDependencies": {
     "@mindfiredigital/adac-parser": "workspace:*",
