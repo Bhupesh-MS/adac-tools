@@ -12,6 +12,7 @@ import {
 import { renderSvg } from './renderer.js';
 
 type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
+export type DiagramLayoutEngine = 'elk' | 'custom' | 'orthogonal' | 'tsm';
 
 export type ComplianceTooltipMap = Record<
   string,
@@ -35,7 +36,7 @@ const optimizer = new OptimizerEngine();
 
 export async function generateDiagramSvg(
   inputContent: string,
-  layoutOverride?: 'elk' | 'custom',
+  layoutOverride?: DiagramLayoutEngine,
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
@@ -84,7 +85,9 @@ export async function generateDiagramSvg(
     }
 
     const graph = await buildElkGraph(adac);
-    const engine = layoutOverride || adac.layout || 'custom';
+    const engine = normalizeLayoutEngine(
+      layoutOverride || adac.layout || 'custom'
+    );
 
     let complianceTooltipMap: ComplianceTooltipMap | undefined;
 
@@ -145,7 +148,7 @@ export async function generateDiagramSvg(
 export async function generateDiagram(
   input: string,
   output: string,
-  layoutOverride?: 'elk' | 'custom',
+  layoutOverride?: DiagramLayoutEngine,
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
@@ -166,4 +169,19 @@ export async function generateDiagram(
   );
   await fs.outputFile(output, svg);
   console.log(`Diagram generated: ${output}`);
+}
+
+function normalizeLayoutEngine(value: unknown): DiagramLayoutEngine {
+  if (
+    value === 'elk' ||
+    value === 'custom' ||
+    value === 'orthogonal' ||
+    value === 'tsm'
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    `Unsupported layout engine "${String(value)}". Expected elk, custom, orthogonal, or tsm.`
+  );
 }

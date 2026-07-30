@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runCLI } from '@mindfiredigital/adac-cli';
 import { parseAdac } from '@mindfiredigital/adac-core';
+import type { DiagramLayoutEngine } from '@mindfiredigital/adac-core';
 import { generateDiagram as generateDiagramWithCompliance } from './generator.js';
 import {
   aggregateCostFromYaml,
@@ -28,7 +29,7 @@ runCLI({
   generateDiagram: async (
     input: string,
     output: string,
-    layoutOverride?: 'elk' | 'custom',
+    layoutOverride?: DiagramLayoutEngine,
     validate?: boolean,
     _costData?: Record<string, number>,
     period?: string,

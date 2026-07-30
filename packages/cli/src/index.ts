@@ -4,6 +4,7 @@ import { exec } from 'child_process';
 
 export type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
 export type PricingModel = 'on_demand' | 'reserved';
+export type DiagramLayoutEngine = 'elk' | 'custom' | 'orthogonal' | 'tsm';
 
 export type CostBreakdown = {
   compute: number;
@@ -18,7 +19,7 @@ export type CLIOptions = {
   generateDiagram: (
     input: string,
     output: string,
-    layoutOverride?: 'elk' | 'custom',
+    layoutOverride?: DiagramLayoutEngine,
     validate?: boolean,
     costData?: Record<string, number>,
     period?: CostPeriod,
@@ -80,7 +81,10 @@ export function runCLI(options: CLIOptions) {
   program
     .command('diagram <file>')
     .description('Generate diagram from ADAC YAML file')
-    .option('-l, --layout <type>', 'Layout engine (elk or custom)')
+    .option(
+      '-l, --layout <type>',
+      'Layout engine (elk, custom, orthogonal, or tsm)'
+    )
     .option('-o, --output <path>', 'Output SVG file path')
     .option('--validate', 'Validate schema before generating')
     .option('--cost', 'Print cost breakdown and generate diagram')
@@ -120,7 +124,7 @@ export function runCLI(options: CLIOptions) {
           }
         }
 
-        const layout = opts.layout as 'elk' | 'custom';
+        const layout = normalizeLayoutEngine(opts.layout);
         // Commander turns --no-optimize into opts.optimize = false
         const skipOptimizer = opts.optimize === false;
         const skipOpen = opts.open === false;
@@ -267,4 +271,22 @@ export function runCLI(options: CLIOptions) {
     });
 
   program.parse(process.argv);
+}
+
+function normalizeLayoutEngine(
+  value?: string
+): DiagramLayoutEngine | undefined {
+  if (value === undefined) return undefined;
+  if (
+    value === 'elk' ||
+    value === 'custom' ||
+    value === 'orthogonal' ||
+    value === 'tsm'
+  ) {
+    return value;
+  }
+
+  throw new Error(
+    `Unsupported layout engine "${value}". Expected elk, custom, orthogonal, or tsm.`
+  );
 }

@@ -1,4 +1,7 @@
-import type { GenerationResult } from '@mindfiredigital/adac-core';
+import type {
+  DiagramLayoutEngine,
+  GenerationResult,
+} from '@mindfiredigital/adac-core';
 
 type AdacCoreModule = typeof import('@mindfiredigital/adac-core');
 
@@ -19,7 +22,7 @@ function getBrowserDeps() {
 
 export async function generateDiagramBrowser(
   yaml: string,
-  layout?: 'elk' | 'custom'
+  layout?: DiagramLayoutEngine
 ): Promise<GenerationResult> {
   const { generateDiagramSvg, iconResolver } = await getBrowserDeps();
 

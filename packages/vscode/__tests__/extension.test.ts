@@ -385,7 +385,7 @@ describe('Schema Data', () => {
 
   it('should have layout engines', async () => {
     const { LAYOUT_ENGINES } = await import('../src/schema-data');
-    expect(LAYOUT_ENGINES).toEqual(['elk', 'custom']);
+    expect(LAYOUT_ENGINES).toEqual(['elk', 'custom', 'orthogonal', 'tsm']);
   });
 
   it('should have every AWS service with all required fields', async () => {

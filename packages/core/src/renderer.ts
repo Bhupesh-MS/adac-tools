@@ -1,6 +1,9 @@
 import ELK from 'elkjs';
 import { type ElkNode, type ElkEdge } from '@mindfiredigital/adac-layout-elk';
-import { CustomLayoutEngine } from '@mindfiredigital/adac-layout-core';
+import {
+  CustomLayoutEngine,
+  OrthogonalLayoutEngine,
+} from '@mindfiredigital/adac-layout-core';
 import { routeAStar } from './routing';
 
 let fsPromise: Promise<typeof import('fs-extra')> | undefined;
@@ -455,9 +458,727 @@ async function buildIconDataUriMap(
   return iconMap;
 }
 
+function simplifyOrthogonalPoints(points: { x: number; y: number }[]) {
+  const deduped = points.filter((point, index) => {
+    const prev = points[index - 1];
+    return !prev || prev.x !== point.x || prev.y !== point.y;
+  });
+
+  return deduped.filter((point, index) => {
+    const prev = deduped[index - 1];
+    const next = deduped[index + 1];
+    if (!prev || !next) return true;
+    const sameVertical = prev.x === point.x && point.x === next.x;
+    const sameHorizontal = prev.y === point.y && point.y === next.y;
+    if (!sameVertical && !sameHorizontal) return true;
+    return !isBetween(prev, point, next);
+  });
+}
+
+function isBetween(
+  prev: { x: number; y: number },
+  point: { x: number; y: number },
+  next: { x: number; y: number }
+) {
+  return (
+    point.x >= Math.min(prev.x, next.x) &&
+    point.x <= Math.max(prev.x, next.x) &&
+    point.y >= Math.min(prev.y, next.y) &&
+    point.y <= Math.max(prev.y, next.y)
+  );
+}
+
+function routeOrthogonalGlobalEdge(
+  startPoint: { x: number; y: number },
+  endPoint: { x: number; y: number },
+  startStub: { x: number; y: number },
+  endStub: { x: number; y: number },
+  startSide: OrthogonalSide,
+  endSide: OrthogonalSide,
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>,
+  obstacles: { x: number; y: number; w: number; h: number }[],
+  preferVertical: boolean,
+  verticalTracks: Map<number, number>,
+  horizontalTracks: Map<number, number>,
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  const margin = 28;
+  const preferredVerticalTrack = (startStub.x + endStub.x) / 2;
+  const preferredHorizontalTrack = (startStub.y + endStub.y) / 2;
+
+  const xTracks = buildOrthogonalTrackCandidates(
+    preferredVerticalTrack,
+    'x',
+    obstacles,
+    verticalTracks,
+    margin
+  );
+  const yTracks = buildOrthogonalTrackCandidates(
+    preferredHorizontalTrack,
+    'y',
+    obstacles,
+    horizontalTracks,
+    margin
+  );
+
+  const routeOptions: Array<{
+    points: { x: number; y: number }[];
+    xTrack?: number;
+    yTrack?: number;
+    bends: number;
+  }> = [];
+  const startVertical = isVerticalOrthogonalSide(startSide);
+  const endVertical = isVerticalOrthogonalSide(endSide);
+
+  if (startVertical && !endVertical) {
+    for (const yTrack of yTracks) {
+      routeOptions.push({
+        points: [
+          startPoint,
+          startStub,
+          { x: startStub.x, y: yTrack },
+          { x: endStub.x, y: yTrack },
+          endStub,
+          endPoint,
+        ],
+        yTrack,
+        bends: 2,
+      });
+    }
+  } else if (!startVertical && endVertical) {
+    for (const xTrack of xTracks) {
+      routeOptions.push({
+        points: [
+          startPoint,
+          startStub,
+          { x: xTrack, y: startStub.y },
+          { x: xTrack, y: endStub.y },
+          endStub,
+          endPoint,
+        ],
+        xTrack,
+        bends: 2,
+      });
+    }
+  }
+
+  if (preferVertical) {
+    for (const yTrack of yTracks) {
+      routeOptions.push({
+        points: [
+          startPoint,
+          startStub,
+          { x: startStub.x, y: yTrack },
+          { x: endStub.x, y: yTrack },
+          endStub,
+          endPoint,
+        ],
+        yTrack,
+        bends: 2,
+      });
+    }
+  } else {
+    for (const xTrack of xTracks) {
+      routeOptions.push({
+        points: [
+          startPoint,
+          startStub,
+          { x: xTrack, y: startStub.y },
+          { x: xTrack, y: endStub.y },
+          endStub,
+          endPoint,
+        ],
+        xTrack,
+        bends: 2,
+      });
+    }
+  }
+
+  for (const yTrack of yTracks) {
+    for (const xTrack of xTracks) {
+      routeOptions.push(
+        preferVertical
+          ? {
+              points: [
+                startPoint,
+                startStub,
+                { x: startStub.x, y: yTrack },
+                { x: xTrack, y: yTrack },
+                { x: xTrack, y: endStub.y },
+                endStub,
+                endPoint,
+              ],
+              xTrack,
+              yTrack,
+              bends: 4,
+            }
+          : {
+              points: [
+                startPoint,
+                startStub,
+                { x: xTrack, y: startStub.y },
+                { x: xTrack, y: yTrack },
+                { x: endStub.x, y: yTrack },
+                endStub,
+                endPoint,
+              ],
+              xTrack,
+              yTrack,
+              bends: 4,
+            }
+      );
+    }
+  }
+
+  const scoredRoutes = routeOptions
+    .map((option, index) => {
+      const points = simplifyOrthogonalPoints(
+        option.points.map((point) => ({
+          x: point.x,
+          y: point.y,
+        }))
+      );
+      return {
+        ...option,
+        index,
+        points,
+        length: orthogonalPathLength(points),
+        approachViolations: countOrthogonalEndpointApproachViolations(
+          points,
+          startSide,
+          endSide
+        ),
+        endpointCrossings: countEndpointBoxReentry(points, endpointBoxes),
+        collisions: countOrthogonalRouteCollisions(points, obstacles, margin),
+        conflicts: countOrthogonalRouteSegmentConflicts(points, routedSegments),
+        earlyTurns: countEarlyOrthogonalTurns(points),
+      };
+    })
+    .sort((a, b) => {
+      if (a.approachViolations !== b.approachViolations) {
+        return a.approachViolations - b.approachViolations;
+      }
+      if (a.endpointCrossings !== b.endpointCrossings) {
+        return a.endpointCrossings - b.endpointCrossings;
+      }
+      if (a.collisions !== b.collisions) return a.collisions - b.collisions;
+      if (a.conflicts !== b.conflicts) return a.conflicts - b.conflicts;
+      if (a.earlyTurns !== b.earlyTurns) return a.earlyTurns - b.earlyTurns;
+      if (a.bends !== b.bends) return a.bends - b.bends;
+      if (a.length !== b.length) return a.length - b.length;
+      return a.index - b.index;
+    });
+
+  const best = scoredRoutes[0]?.points ?? [
+    startPoint,
+    startStub,
+    endStub,
+    endPoint,
+  ];
+  const selected = scoredRoutes[0];
+  if (selected?.xTrack !== undefined) {
+    markOrthogonalTrack(selected.xTrack, verticalTracks);
+  }
+  if (selected?.yTrack !== undefined) {
+    markOrthogonalTrack(selected.yTrack, horizontalTracks);
+  }
+  appendOrthogonalSegments(best, routedSegments);
+
+  return simplifyOrthogonalPoints(
+    best.map((point) => ({
+      x: point.x,
+      y: point.y,
+    }))
+  ).slice(1, -1);
+}
+
+function countEndpointBoxReentry(
+  points: { x: number; y: number }[],
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>
+) {
+  let crossings = 0;
+  for (let i = 1; i < points.length - 2; i++) {
+    for (const box of endpointBoxes) {
+      if (orthogonalSegmentIntersectsBox(points[i], points[i + 1], box, 0)) {
+        crossings += 100;
+      }
+    }
+  }
+  return crossings;
+}
+
+function countOrthogonalEndpointApproachViolations(
+  points: { x: number; y: number }[],
+  startSide: OrthogonalSide,
+  endSide: OrthogonalSide
+) {
+  if (points.length < 4) return 0;
+
+  const startViolation = endpointApproachViolation(
+    points[1],
+    points[2],
+    startSide,
+    true
+  );
+  const endViolation = endpointApproachViolation(
+    points[points.length - 2],
+    points[points.length - 3],
+    endSide,
+    false
+  );
+  return startViolation + endViolation;
+}
+
+function endpointApproachViolation(
+  stub: { x: number; y: number },
+  next: { x: number; y: number },
+  side: OrthogonalSide,
+  isSource: boolean
+) {
+  if (side === 'top') {
+    return next.y <= stub.y || next.y === stub.y ? 0 : isSource ? 1 : 10;
+  }
+  if (side === 'bottom') {
+    return next.y >= stub.y || next.y === stub.y ? 0 : isSource ? 1 : 10;
+  }
+  if (side === 'left') {
+    return next.x <= stub.x || next.x === stub.x ? 0 : isSource ? 1 : 10;
+  }
+  return next.x >= stub.x || next.x === stub.x ? 0 : isSource ? 1 : 10;
+}
+
+function countOrthogonalRouteSegmentConflicts(
+  points: { x: number; y: number }[],
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  let conflicts = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const current = { a: points[i], b: points[i + 1] };
+    for (const routed of routedSegments) {
+      conflicts += orthogonalSegmentConflictScore(current, routed);
+    }
+  }
+  return conflicts;
+}
+
+function orthogonalSegmentConflictScore(
+  current: { a: { x: number; y: number }; b: { x: number; y: number } },
+  routed: { a: { x: number; y: number }; b: { x: number; y: number } }
+) {
+  const currentVertical = current.a.x === current.b.x;
+  const routedVertical = routed.a.x === routed.b.x;
+  if (currentVertical !== routedVertical) return 0;
+
+  if (currentVertical) {
+    const distance = Math.abs(current.a.x - routed.a.x);
+    const overlap = rangeOverlap(
+      current.a.y,
+      current.b.y,
+      routed.a.y,
+      routed.b.y
+    );
+    if (overlap <= 0) return 0;
+    if (distance === 0) return overlap * 20;
+    if (distance < 18) return overlap * 4;
+    return 0;
+  }
+
+  const distance = Math.abs(current.a.y - routed.a.y);
+  const overlap = rangeOverlap(
+    current.a.x,
+    current.b.x,
+    routed.a.x,
+    routed.b.x
+  );
+  if (overlap <= 0) return 0;
+  if (distance === 0) return overlap * 20;
+  if (distance < 18) return overlap * 4;
+  return 0;
+}
+
+function appendOrthogonalSegments(
+  points: { x: number; y: number }[],
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  for (let i = 0; i < points.length - 1; i++) {
+    routedSegments.push({ a: points[i], b: points[i + 1] });
+  }
+}
+
+function rangeOverlap(
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number
+) {
+  const aMin = Math.min(aStart, aEnd);
+  const aMax = Math.max(aStart, aEnd);
+  const bMin = Math.min(bStart, bEnd);
+  const bMax = Math.max(bStart, bEnd);
+  return Math.max(0, Math.min(aMax, bMax) - Math.max(aMin, bMin));
+}
+
+function buildOrthogonalTrackCandidates(
+  preferred: number,
+  axis: 'x' | 'y',
+  obstacles: { x: number; y: number; w: number; h: number }[],
+  tracks: Map<number, number>,
+  margin: number
+) {
+  const values = new Set<number>();
+  const snappedPreferred = snapOrthogonalTrack(preferred);
+  const usage = tracks.get(snappedPreferred) || 0;
+  const gap = 24;
+
+  values.add(snappedPreferred);
+  for (let i = 1; i <= 8; i++) {
+    values.add(snappedPreferred + i * gap);
+    values.add(snappedPreferred - i * gap);
+  }
+  if (usage > 0) {
+    values.add(snappedPreferred + Math.ceil(usage / 2) * gap);
+    values.add(snappedPreferred - Math.ceil(usage / 2) * gap);
+  }
+
+  for (const obstacle of obstacles) {
+    if (axis === 'x') {
+      values.add(snapOrthogonalTrack(obstacle.x - margin - 10));
+      values.add(snapOrthogonalTrack(obstacle.x + obstacle.w + margin + 10));
+    } else {
+      values.add(snapOrthogonalTrack(obstacle.y - margin - 10));
+      values.add(snapOrthogonalTrack(obstacle.y + obstacle.h + margin + 10));
+    }
+  }
+
+  return [...values].sort((a, b) => {
+    const distance = Math.abs(a - preferred) - Math.abs(b - preferred);
+    return distance || a - b;
+  });
+}
+
+function countOrthogonalRouteCollisions(
+  points: { x: number; y: number }[],
+  obstacles: { x: number; y: number; w: number; h: number }[],
+  margin: number
+) {
+  let collisions = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (a.x !== b.x && a.y !== b.y) {
+      collisions += 10;
+      continue;
+    }
+
+    for (const obstacle of obstacles) {
+      if (orthogonalSegmentIntersectsBox(a, b, obstacle, margin)) {
+        collisions++;
+      }
+    }
+  }
+  return collisions;
+}
+
+function orthogonalSegmentIntersectsBox(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  box: { x: number; y: number; w: number; h: number },
+  margin: number
+) {
+  const left = box.x - margin;
+  const right = box.x + box.w + margin;
+  const top = box.y - margin;
+  const bottom = box.y + box.h + margin;
+
+  if (a.x === b.x) {
+    const minY = Math.min(a.y, b.y);
+    const maxY = Math.max(a.y, b.y);
+    return a.x > left && a.x < right && maxY > top && minY < bottom;
+  }
+
+  if (a.y === b.y) {
+    const minX = Math.min(a.x, b.x);
+    const maxX = Math.max(a.x, b.x);
+    return a.y > top && a.y < bottom && maxX > left && minX < right;
+  }
+
+  return true;
+}
+
+function orthogonalPathLength(points: { x: number; y: number }[]) {
+  let length = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    length +=
+      Math.abs(points[i].x - points[i + 1].x) +
+      Math.abs(points[i].y - points[i + 1].y);
+  }
+  return length;
+}
+
+function markOrthogonalTrack(track: number, tracks: Map<number, number>) {
+  const key = snapOrthogonalTrack(track);
+  tracks.set(key, (tracks.get(key) || 0) + 1);
+}
+
+function snapOrthogonalTrack(value: number) {
+  return Math.round(value / 10) * 10;
+}
+
+type OrthogonalSide = 'top' | 'right' | 'bottom' | 'left';
+const ORTHOGONAL_SIDES: OrthogonalSide[] = ['top', 'right', 'bottom', 'left'];
+
+function chooseOrthogonalSide(
+  nodeId: string,
+  preferred: OrthogonalSide,
+  usage: Map<string, number>,
+  connectionCount: number
+) {
+  const preferredUsage = usage.get(`${nodeId}:${preferred}`) || 0;
+  if (connectionCount < 2 || preferredUsage === 0) return preferred;
+
+  return [...ORTHOGONAL_SIDES].sort((a, b) => {
+    const usageDelta =
+      (usage.get(`${nodeId}:${a}`) || 0) - (usage.get(`${nodeId}:${b}`) || 0);
+    if (usageDelta !== 0) return usageDelta;
+
+    const preferenceDelta =
+      orthogonalSideDistance(a, preferred) -
+      orthogonalSideDistance(b, preferred);
+    if (preferenceDelta !== 0) return preferenceDelta;
+
+    return ORTHOGONAL_SIDES.indexOf(a) - ORTHOGONAL_SIDES.indexOf(b);
+  })[0];
+}
+
+function isVerticalOrthogonalSide(side: OrthogonalSide) {
+  return side === 'top' || side === 'bottom';
+}
+
+function countEarlyOrthogonalTurns(points: { x: number; y: number }[]) {
+  if (points.length < 4) return 0;
+  const minimumClearRun = 72;
+  return (
+    earlyOrthogonalTurnPenalty(points, minimumClearRun) +
+    earlyOrthogonalTurnPenalty([...points].reverse(), minimumClearRun)
+  );
+}
+
+function earlyOrthogonalTurnPenalty(
+  points: { x: number; y: number }[],
+  minimumClearRun: number
+) {
+  if (points.length < 3) return 0;
+  const first = points[0];
+  const second = points[1];
+  const initialVertical = first.x === second.x;
+  const initialHorizontal = first.y === second.y;
+  if (!initialVertical && !initialHorizontal) return minimumClearRun * 8;
+
+  let run = 0;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const next = points[i];
+    const sameDirection = initialVertical
+      ? prev.x === next.x
+      : prev.y === next.y;
+    if (!sameDirection) break;
+    run += Math.abs(prev.x - next.x) + Math.abs(prev.y - next.y);
+  }
+
+  return run >= minimumClearRun ? 0 : (minimumClearRun - run) * 8;
+}
+
+function orthogonalSideDistance(
+  side: OrthogonalSide,
+  preferred: OrthogonalSide
+) {
+  if (side === preferred) return 0;
+  if (
+    (side === 'top' && preferred === 'bottom') ||
+    (side === 'bottom' && preferred === 'top') ||
+    (side === 'left' && preferred === 'right') ||
+    (side === 'right' && preferred === 'left')
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+function markOrthogonalSideUsage(
+  nodeId: string,
+  side: OrthogonalSide,
+  usage: Map<string, number>
+) {
+  const key = `${nodeId}:${side}`;
+  usage.set(key, (usage.get(key) || 0) + 1);
+}
+
+function markOrthogonalVisualPortUsage(
+  nodeId: string,
+  side: OrthogonalSide,
+  usage: Map<string, number>
+) {
+  markOrthogonalSideUsage(nodeId, side, usage);
+  const nodeKey = `${nodeId}:all`;
+  usage.set(nodeKey, (usage.get(nodeKey) || 0) + 1);
+}
+
+function preferredOrthogonalSides(
+  source: { x: number; y: number; w: number; h: number },
+  target: { x: number; y: number; w: number; h: number },
+  sourceBottom: number,
+  targetTop: number
+) {
+  const sourceCx = source.x + source.w / 2;
+  const sourceCy = source.y + source.h / 2;
+  const targetCx = target.x + target.w / 2;
+  const targetCy = target.y + target.h / 2;
+  const isVertical =
+    Math.abs(targetCx - sourceCx) < Math.abs(targetCy - sourceCy);
+
+  if (isVertical) {
+    return targetTop > sourceBottom - 10
+      ? { sourceSide: 'bottom' as const, targetSide: 'top' as const }
+      : { sourceSide: 'top' as const, targetSide: 'bottom' as const };
+  }
+
+  return targetCx > sourceCx
+    ? { sourceSide: 'right' as const, targetSide: 'left' as const }
+    : { sourceSide: 'left' as const, targetSide: 'right' as const };
+}
+
+function orthogonalSidePort(
+  pos: { id: string; x: number; y: number; w: number; h: number },
+  side: OrthogonalSide,
+  usage: Map<string, number>,
+  topAdjust = 0
+) {
+  const key = `${pos.id}:${side}`;
+  const count = usage.get(key) || 0;
+  const nodeKey = `${pos.id}:all`;
+  const nodeCount = usage.get(nodeKey) || 0;
+  usage.set(key, count + 1);
+  usage.set(nodeKey, nodeCount + 1);
+
+  const offset = alternatingPortOffset(nodeCount);
+  const inset = 16;
+  const top = pos.y + topAdjust;
+  const bottom = pos.y + pos.h;
+  const left = pos.x;
+  const right = pos.x + pos.w;
+
+  if (side === 'left' || side === 'right') {
+    const minY = Math.min(bottom - inset, top + inset);
+    const maxY = Math.max(top + inset, bottom - inset);
+    return {
+      x: side === 'left' ? left : right,
+      y: clamp(pos.y + pos.h / 2 + offset, minY, maxY),
+      stubDistance: 20 + count * 16,
+    };
+  }
+
+  const minX = Math.min(right - inset, left + inset);
+  const maxX = Math.max(left + inset, right - inset);
+  return {
+    x: clamp(pos.x + pos.w / 2 + offset, minX, maxX),
+    y: side === 'top' ? top : bottom,
+    stubDistance: 20 + count * 16,
+  };
+}
+
+function orthogonalStub(
+  point: { x: number; y: number },
+  side: OrthogonalSide,
+  distance = 20
+) {
+  if (side === 'top') return { x: point.x, y: point.y - distance };
+  if (side === 'bottom') return { x: point.x, y: point.y + distance };
+  if (side === 'left') return { x: point.x - distance, y: point.y };
+  return { x: point.x + distance, y: point.y };
+}
+
+function directOrthogonalConnection(
+  source: { x: number; y: number; w: number; h: number },
+  target: { x: number; y: number; w: number; h: number },
+  sourceSide: OrthogonalSide,
+  targetSide: OrthogonalSide,
+  obstacles: { x: number; y: number; w: number; h: number }[]
+) {
+  const sourceCx = source.x + source.w / 2;
+  const sourceCy = source.y + source.h / 2;
+  const targetCx = target.x + target.w / 2;
+  const targetCy = target.y + target.h / 2;
+  const tolerance = 1;
+
+  let startPoint: { x: number; y: number } | undefined;
+  let endPoint: { x: number; y: number } | undefined;
+
+  if (
+    sourceSide === 'right' &&
+    targetSide === 'left' &&
+    source.x + source.w <= target.x &&
+    Math.abs(sourceCy - targetCy) <= tolerance
+  ) {
+    startPoint = { x: source.x + source.w, y: sourceCy };
+    endPoint = { x: target.x, y: targetCy };
+  } else if (
+    sourceSide === 'left' &&
+    targetSide === 'right' &&
+    target.x + target.w <= source.x &&
+    Math.abs(sourceCy - targetCy) <= tolerance
+  ) {
+    startPoint = { x: source.x, y: sourceCy };
+    endPoint = { x: target.x + target.w, y: targetCy };
+  } else if (
+    sourceSide === 'bottom' &&
+    targetSide === 'top' &&
+    source.y + source.h <= target.y &&
+    Math.abs(sourceCx - targetCx) <= tolerance
+  ) {
+    startPoint = { x: sourceCx, y: source.y + source.h };
+    endPoint = { x: targetCx, y: target.y };
+  } else if (
+    sourceSide === 'top' &&
+    targetSide === 'bottom' &&
+    target.y + target.h <= source.y &&
+    Math.abs(sourceCx - targetCx) <= tolerance
+  ) {
+    startPoint = { x: sourceCx, y: source.y };
+    endPoint = { x: targetCx, y: target.y + target.h };
+  }
+
+  if (!startPoint || !endPoint) return undefined;
+
+  const blocked = obstacles.some((obstacle) =>
+    orthogonalSegmentIntersectsBox(startPoint, endPoint, obstacle, 16)
+  );
+  if (blocked) return undefined;
+
+  return { startPoint, endPoint };
+}
+
+function alternatingPortOffset(index: number) {
+  if (index === 0) return 0;
+  const direction = index % 2 === 0 ? -1 : 1;
+  return direction * Math.ceil(index / 2) * 15;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 export async function renderSvg(
   graph: ElkNode,
-  layoutEngine: 'elk' | 'custom' = 'elk',
+  layoutEngine: 'elk' | 'custom' | 'orthogonal' | 'tsm' = 'elk',
   complianceTooltipMap?: Record<
     string,
     { frameworks: string[]; violations: string[] }
@@ -468,6 +1189,8 @@ export async function renderSvg(
   iconResolver?: (iconName: string) => Promise<string | null>
 ): Promise<string> {
   let layout: ElkNode;
+  const isOrthogonalLayout =
+    layoutEngine === 'orthogonal' || layoutEngine === 'tsm';
   const allNodeBoxes: {
     id: string;
     x: number;
@@ -477,7 +1200,7 @@ export async function renderSvg(
     isContainer: boolean;
   }[] = [];
 
-  if (layoutEngine === 'custom') {
+  if (layoutEngine === 'custom' || isOrthogonalLayout) {
     // ── Hierarchical custom layout ──────────────────────────────
     // Recursively lays out children within each container,
     // preserving the nesting. Children are arranged in a grid
@@ -491,8 +1214,21 @@ export async function renderSvg(
 
     // Collect ALL original edges from every level for rendering later
     const allOriginalEdges: ElkEdge[] = [];
+    const seenOriginalEdges = new Set<string>();
     const collectAllEdges = (node: ElkNode) => {
-      if (node.edges) allOriginalEdges.push(...node.edges);
+      if (node.edges) {
+        for (const edge of node.edges) {
+          const edgeKey = [
+            edge.id || '',
+            edge.sources?.[0] || '',
+            edge.targets?.[0] || '',
+            edge.labels?.[0]?.text || '',
+          ].join('|');
+          if (seenOriginalEdges.has(edgeKey)) continue;
+          seenOriginalEdges.add(edgeKey);
+          allOriginalEdges.push(edge);
+        }
+      }
       node.children?.forEach(collectAllEdges);
     };
     collectAllEdges(graph);
@@ -540,15 +1276,18 @@ export async function renderSvg(
 
       if (
         localEdges.length > 0 &&
-        laidOutChildren.length <= 12 &&
-        !hasStructuralChildren
+        (isOrthogonalLayout ||
+          (laidOutChildren.length <= 12 && !hasStructuralChildren))
       ) {
-        // Use the core engine for rank-based layout when there are edges
-        const engine = new CustomLayoutEngine({
+        const engineOptions = {
           rankdir: 'TB',
           nodesep: NODE_GAP_X,
           ranksep: NODE_GAP_Y,
-        });
+        } as const;
+
+        const engine = !isOrthogonalLayout
+          ? new CustomLayoutEngine(engineOptions)
+          : new OrthogonalLayoutEngine(engineOptions);
 
         for (const child of laidOutChildren) {
           engine.addNode(child.id, {
@@ -715,6 +1454,33 @@ export async function renderSvg(
     const routedEdges: ElkEdge[] = [];
     const verticalPortUsage = new Map<number, number>();
     const horizontalPortUsage = new Map<number, number>();
+    const orthogonalVerticalTracks = new Map<number, number>();
+    const orthogonalHorizontalTracks = new Map<number, number>();
+    const orthogonalSourcePortUsage = new Map<string, number>();
+    const orthogonalTargetPortUsage = new Map<string, number>();
+    const orthogonalVisualPortUsage = new Map<string, number>();
+    const orthogonalRoutedSegments: Array<{
+      a: { x: number; y: number };
+      b: { x: number; y: number };
+    }> = [];
+    const incomingEdgeCounts = new Map<string, number>();
+    const outgoingEdgeCounts = new Map<string, number>();
+    for (const edge of allOriginalEdges) {
+      const source = edge.sources?.[0];
+      const target = edge.targets?.[0];
+      if (source) {
+        outgoingEdgeCounts.set(
+          source,
+          (outgoingEdgeCounts.get(source) || 0) + 1
+        );
+      }
+      if (target) {
+        incomingEdgeCounts.set(
+          target,
+          (incomingEdgeCounts.get(target) || 0) + 1
+        );
+      }
+    }
 
     const getVerticalOffset = (x: number) => {
       const key = Math.round(x / 5) * 5;
@@ -739,7 +1505,54 @@ export async function renderSvg(
       return { left: pos.x + 16, right: pos.x + 16 + actualLabelW };
     };
 
-    allOriginalEdges.forEach((origEdge) => {
+    const getActiveObstacles = (srcId: string, tgtId: string) => {
+      const skipIds = new Set<string>();
+      const addParentChain = (nodeId: string) => {
+        skipIds.add(nodeId);
+        let cur = parentChain.get(nodeId);
+        while (cur) {
+          skipIds.add(cur);
+          cur = parentChain.get(cur);
+        }
+      };
+      addParentChain(srcId);
+      addParentChain(tgtId);
+      return allObstacles.filter((o) => !skipIds.has(o.id));
+    };
+
+    const directPriority = (edge: ElkEdge) => {
+      if (!isOrthogonalLayout) return 1;
+      const srcId = edge.sources[0];
+      const tgtId = edge.targets[0];
+      const srcPos = absPositions.get(srcId);
+      const tgtPos = absPositions.get(tgtId);
+      if (!srcPos || !tgtPos) return 1;
+
+      const { sourceSide, targetSide } = preferredOrthogonalSides(
+        srcPos,
+        tgtPos,
+        srcPos.y + srcPos.h,
+        tgtPos.y
+      );
+
+      return directOrthogonalConnection(
+        srcPos,
+        tgtPos,
+        sourceSide,
+        targetSide,
+        getActiveObstacles(srcId, tgtId)
+      )
+        ? 0
+        : 1;
+    };
+
+    const orderedOriginalEdges = isOrthogonalLayout
+      ? [...allOriginalEdges].sort(
+          (a, b) => directPriority(a) - directPriority(b)
+        )
+      : allOriginalEdges;
+
+    orderedOriginalEdges.forEach((origEdge) => {
       const srcId = origEdge.sources[0];
       const tgtId = origEdge.targets[0];
       const srcPos = absPositions.get(srcId);
@@ -809,8 +1622,96 @@ export async function renderSvg(
       let endPt: { x: number; y: number };
       let startStub: { x: number; y: number };
       let endStub: { x: number; y: number };
+      let routeSourceSide: OrthogonalSide | undefined;
+      let routeTargetSide: OrthogonalSide | undefined;
+      let directOrthogonalRoute = false;
 
-      if (isVertical) {
+      // Filter obstacles: treat all non-ancestor nodes (both leaf and container) as solid obstacles
+      const activeObstacles = getActiveObstacles(srcId, tgtId);
+
+      if (isOrthogonalLayout) {
+        let { sourceSide, targetSide } = preferredOrthogonalSides(
+          srcPos,
+          tgtPos,
+          srcBot,
+          tgtTop
+        );
+        const sourceConnectionCount =
+          (incomingEdgeCounts.get(srcId) || 0) +
+          (outgoingEdgeCounts.get(srcId) || 0);
+        const targetConnectionCount =
+          (incomingEdgeCounts.get(tgtId) || 0) +
+          (outgoingEdgeCounts.get(tgtId) || 0);
+
+        const directConnection = directOrthogonalConnection(
+          srcPos,
+          tgtPos,
+          sourceSide,
+          targetSide,
+          activeObstacles
+        );
+
+        if (directConnection) {
+          startPt = directConnection.startPoint;
+          endPt = directConnection.endPoint;
+          startStub = startPt;
+          endStub = endPt;
+          routeSourceSide = sourceSide;
+          routeTargetSide = targetSide;
+          directOrthogonalRoute = true;
+          markOrthogonalSideUsage(srcId, sourceSide, orthogonalSourcePortUsage);
+          markOrthogonalSideUsage(tgtId, targetSide, orthogonalTargetPortUsage);
+          markOrthogonalVisualPortUsage(
+            srcId,
+            sourceSide,
+            orthogonalVisualPortUsage
+          );
+          markOrthogonalVisualPortUsage(
+            tgtId,
+            targetSide,
+            orthogonalVisualPortUsage
+          );
+          appendOrthogonalSegments([startPt, endPt], orthogonalRoutedSegments);
+        } else {
+          sourceSide = chooseOrthogonalSide(
+            srcId,
+            sourceSide,
+            orthogonalVisualPortUsage,
+            sourceConnectionCount
+          );
+          targetSide = chooseOrthogonalSide(
+            tgtId,
+            targetSide,
+            orthogonalVisualPortUsage,
+            targetConnectionCount
+          );
+          markOrthogonalSideUsage(srcId, sourceSide, orthogonalSourcePortUsage);
+          markOrthogonalSideUsage(tgtId, targetSide, orthogonalTargetPortUsage);
+          routeSourceSide = sourceSide;
+          routeTargetSide = targetSide;
+
+          const sourcePort = orthogonalSidePort(
+            srcPos,
+            sourceSide,
+            orthogonalVisualPortUsage,
+            srcTopAdjust
+          );
+          const targetPort = orthogonalSidePort(
+            tgtPos,
+            targetSide,
+            orthogonalVisualPortUsage,
+            tgtTopAdjust
+          );
+          startPt = sourcePort;
+          endPt = targetPort;
+          startStub = orthogonalStub(
+            startPt,
+            sourceSide,
+            sourcePort.stubDistance
+          );
+          endStub = orthogonalStub(endPt, targetSide, targetPort.stubDistance);
+        }
+      } else if (isVertical) {
         if (tgtTop > srcBot - 10) {
           startPt = { x: srcCx + sOffX, y: srcBot };
           startStub = { x: srcCx + sOffX, y: srcBot + 20 };
@@ -836,38 +1737,50 @@ export async function renderSvg(
         }
       }
 
-      const skipIds = new Set<string>();
-      const addParentChain = (nodeId: string) => {
-        skipIds.add(nodeId);
-        let cur = parentChain.get(nodeId);
-        while (cur) {
-          skipIds.add(cur);
-          cur = parentChain.get(cur);
-        }
-      };
-      addParentChain(srcId);
-      addParentChain(tgtId);
-
-      // Filter obstacles: treat all non-ancestor nodes (both leaf and container) as solid obstacles
-      const activeObstacles = allObstacles.filter((o) => !skipIds.has(o.id));
-
       let mappedBends: { x: number; y: number }[];
-      try {
-        const astarResult = routeAStar(startStub, endStub, activeObstacles, 20);
-        mappedBends = astarResult.points.map((p) => ({
-          x: p.x,
-          y: p.y,
-        }));
-      } catch (err) {
-        console.warn(
-          `[ADAC Routing] A* routing failed for edge ${origEdge.id}:`,
-          err
+      if (isOrthogonalLayout && directOrthogonalRoute) {
+        mappedBends = [];
+      } else if (isOrthogonalLayout) {
+        mappedBends = routeOrthogonalGlobalEdge(
+          startPt,
+          endPt,
+          startStub,
+          endStub,
+          routeSourceSide!,
+          routeTargetSide!,
+          [
+            { x: srcPos.x, y: srcPos.y, w: srcPos.w, h: srcPos.h },
+            { x: tgtPos.x, y: tgtPos.y, w: tgtPos.w, h: tgtPos.h },
+          ],
+          activeObstacles,
+          isVertical,
+          orthogonalVerticalTracks,
+          orthogonalHorizontalTracks,
+          orthogonalRoutedSegments
         );
-        const midY = (startStub.y + endStub.y) / 2;
-        mappedBends = [
-          { x: startStub.x, y: midY },
-          { x: endStub.x, y: midY },
-        ];
+      } else {
+        try {
+          const astarResult = routeAStar(
+            startStub,
+            endStub,
+            activeObstacles,
+            20
+          );
+          mappedBends = astarResult.points.map((p) => ({
+            x: p.x,
+            y: p.y,
+          }));
+        } catch (err) {
+          console.warn(
+            `[ADAC Routing] A* routing failed for edge ${origEdge.id}:`,
+            err
+          );
+          const midY = (startStub.y + endStub.y) / 2;
+          mappedBends = [
+            { x: startStub.x, y: midY },
+            { x: endStub.x, y: midY },
+          ];
+        }
       }
 
       routedEdges.push({
@@ -1064,6 +1977,99 @@ export async function renderSvg(
   };
   collectEdges(layout);
 
+  const orthogonalContainerVisualBounds = new Map<
+    string,
+    { x: number; y: number; w: number; h: number }
+  >();
+
+  if (isOrthogonalLayout) {
+    const containerPadding = 20;
+    const containerIds = Array.from(nodesMap.values())
+      .filter((node) => {
+        return (
+          node.properties?.type === 'container' &&
+          (node.children?.length || 0) > 1
+        );
+      })
+      .map((node) => node.id);
+
+    const isWithinContainer = (nodeId: string, containerId: string) => {
+      let current = nodeId;
+      while (current) {
+        if (current === containerId) return true;
+        current = parentMap.get(current) || '';
+      }
+      return false;
+    };
+
+    for (const containerId of containerIds) {
+      const node = nodesMap.get(containerId);
+      const pos = nodeAbsPos.get(containerId);
+      if (!node || !pos) continue;
+
+      let left = pos.x;
+      let top = pos.y;
+      let right = pos.x + (node.width || 0);
+      let bottom = pos.y + (node.height || 0);
+      const original = { left, top, right, bottom };
+
+      for (const edge of allEdges) {
+        const sourceInside = edge.sources?.some((source) =>
+          isWithinContainer(source, containerId)
+        );
+        const targetInside = edge.targets?.some((target) =>
+          isWithinContainer(target, containerId)
+        );
+        if (!sourceInside && !targetInside) continue;
+
+        for (const section of edge.sections || []) {
+          const points = [
+            section.startPoint,
+            ...(section.bendPoints || []),
+            section.endPoint,
+          ];
+
+          for (let i = 0; i < points.length - 1; i++) {
+            const a = points[i];
+            const b = points[i + 1];
+            const segLeft = Math.min(a.x, b.x);
+            const segRight = Math.max(a.x, b.x);
+            const segTop = Math.min(a.y, b.y);
+            const segBottom = Math.max(a.y, b.y);
+            const crossesContainerX =
+              segRight >= original.left && segLeft <= original.right;
+            const crossesContainerY =
+              segBottom >= original.top && segTop <= original.bottom;
+
+            if (crossesContainerX) {
+              top = Math.min(top, segTop - containerPadding);
+              bottom = Math.max(bottom, segBottom + containerPadding);
+            }
+            if (sourceInside && targetInside && crossesContainerY) {
+              left = Math.min(left, segLeft - containerPadding);
+              right = Math.max(right, segRight + containerPadding);
+            }
+          }
+        }
+      }
+
+      orthogonalContainerVisualBounds.set(containerId, {
+        x: left,
+        y: top,
+        w: right - left,
+        h: bottom - top,
+      });
+
+      const existingBox = allNodeBoxes.find((box) => box.id === containerId);
+      if (existingBox) {
+        existingBox.x = left;
+        existingBox.y = top;
+        existingBox.right = right;
+        existingBox.bottom = bottom;
+      }
+    }
+  }
+
   const rootCssProp = (layout.properties?.cssClass || '') as string;
   const defaultEdgeClass = rootCssProp.includes('gcp')
     ? 'gcp-edge'
@@ -1127,7 +2133,7 @@ export async function renderSvg(
     (e.sections || []).forEach((s) => {
       const pts = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
       let d = `M ${pts[0].x} ${pts[0].y}`;
-      const R = 12; // Corner radius
+      const R = isOrthogonalLayout ? 0 : 12; // Orthogonal output stays crisp.
 
       for (let i = 1; i < pts.length - 1; i++) {
         const p0 = pts[i - 1];
@@ -1146,7 +2152,7 @@ export async function renderSvg(
 
         const cross = (dx1 / len1) * (dy2 / len2) - (dy1 / len1) * (dx2 / len2);
 
-        if (r > 1 && Math.abs(cross) > 0.001) {
+        if (!isOrthogonalLayout && r > 1 && Math.abs(cross) > 0.001) {
           const startX = p1.x - (dx1 / len1) * r;
           const startY = p1.y - (dy1 / len1) * r;
           d += ` L ${startX} ${startY}`;
@@ -1235,17 +2241,30 @@ export async function renderSvg(
               { x: 48, y: 0 },
               { x: -48, y: 0 },
             ]
-          : [
-              { x: 0, y: 0 },
-              { x: 0, y: 16 },
-              { x: 0, y: -16 },
-              { x: 0, y: 32 },
-              { x: 0, y: -32 },
-              { x: textLen / 2 + 10, y: 0 },
-              { x: -(textLen / 2 + 10), y: 0 },
-              { x: 0, y: 48 },
-              { x: 0, y: -48 },
-            ];
+          : isOrthogonalLayout
+            ? [
+                { x: 0, y: 0 },
+                { x: 0, y: 16 },
+                { x: 0, y: 32 },
+                { x: 0, y: 48 },
+                { x: 0, y: -16 },
+                { x: 0, y: -32 },
+                { x: textLen / 2 + 10, y: 0 },
+                { x: -(textLen / 2 + 10), y: 0 },
+                { x: 0, y: 64 },
+                { x: 0, y: -48 },
+              ]
+            : [
+                { x: 0, y: 0 },
+                { x: 0, y: 16 },
+                { x: 0, y: -16 },
+                { x: 0, y: 32 },
+                { x: 0, y: -32 },
+                { x: textLen / 2 + 10, y: 0 },
+                { x: -(textLen / 2 + 10), y: 0 },
+                { x: 0, y: 48 },
+                { x: 0, y: -48 },
+              ];
 
         for (const off of offsets) {
           const cx = labelX + off.x;
@@ -1401,6 +2420,11 @@ export async function renderSvg(
     }
 
     if (props.type === 'container') {
+      const visualBounds = orthogonalContainerVisualBounds.get(nodeId);
+      const containerX = visualBounds?.x ?? absX;
+      const containerY = visualBounds?.y ?? absY;
+      const containerW = visualBounds?.w ?? nw;
+      const containerH = visualBounds?.h ?? nh;
       // Determine provider from cssClass
       const css = (props.cssClass || '') as string;
       const isGcpCont = css.includes('gcp');
@@ -1432,8 +2456,8 @@ export async function renderSvg(
       const r = 14; // corner radius — consistent across all containers
 
       // 1. Container background + border
-      output += `<rect x="${absX}" y="${absY}"
-        width="${nw}" height="${nh}"
+      output += `<rect x="${containerX}" y="${containerY}"
+        width="${containerW}" height="${containerH}"
         class="${rectClass}"
         rx="${r}" ry="${r}"/>`;
 
@@ -1443,16 +2467,16 @@ export async function renderSvg(
 
       const { displayLabel, actualLabelW } = calculateLabelDimensions(
         label,
-        nw
+        containerW
       );
 
-      output += `<rect x="${absX + 16}" y="${absY - pillR}"
+      output += `<rect x="${containerX + 16}" y="${containerY - pillR}"
         width="${actualLabelW}" height="${pillH}"
         rx="${pillR}" ry="${pillR}"
         class="${rectClass} title-pill"/>`;
 
       output += `<text
-        x="${absX + 16 + actualLabelW / 2}" y="${absY - pillR + pillH / 2}"
+        x="${containerX + 16 + actualLabelW / 2}" y="${containerY - pillR + pillH / 2}"
         class="${labelCls}"
         text-anchor="middle"
         dominant-baseline="middle">${escapeXml(displayLabel)}</text>`;
@@ -1463,7 +2487,7 @@ export async function renderSvg(
         if (iconUri) {
           output += `<image
             href="${iconUri}"
-            x="${absX + nw - 28}" y="${absY + 6}"
+            x="${containerX + containerW - 28}" y="${containerY + 6}"
             width="20" height="20"
             preserveAspectRatio="xMidYMid meet"/>`;
         }
@@ -1635,6 +2659,30 @@ export async function renderSvg(
   };
 
   const provider = getProvider(layout);
+  const arrowMarkerDefs =
+    provider === 'gcp'
+      ? `<marker id="arrow-gcp" viewBox="0 0 10 10"
+      refX="9" refY="5"
+      markerWidth="5" markerHeight="5"
+      orient="auto-start-reverse">
+      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
+        fill="#4285F4" stroke="none" fill-opacity="0.85"/>
+    </marker>`
+      : provider === 'azure'
+        ? `<marker id="arrow-azure" viewBox="0 0 10 10"
+      refX="9" refY="5"
+      markerWidth="5" markerHeight="5"
+      orient="auto-start-reverse">
+      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
+        fill="#0078D4" stroke="none" fill-opacity="0.85"/>
+    </marker>`
+        : `<marker id="arrow" viewBox="0 0 10 10"
+      refX="9" refY="5"
+      markerWidth="5" markerHeight="5"
+      orient="auto-start-reverse">
+      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
+        fill="#8FA3BF" stroke="none"/>
+    </marker>`;
   const rootRect = `<rect width="${width}" height="${height}" class="${provider}-root" />
                     <rect width="${width}" height="${height}" fill="url(#dotGrid)" pointer-events="none" />`;
 
@@ -1713,7 +2761,7 @@ export async function renderSvg(
   const legendOutput = renderLegend();
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: auto; max-width: 100%; background-color: #EEF2F7;">
+<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" data-layout="${escapeXml(layoutEngine)}" style="width: 100%; height: auto; max-width: 100%; background-color: #EEF2F7;">
   <defs>
     <style>${CSS_STYLES}</style>
 
@@ -1776,28 +2824,8 @@ export async function renderSvg(
       </feMerge>
     </filter>
 
-    <!-- Arrow markers: one per provider -->
-    <marker id="arrow" viewBox="0 0 10 10"
-      refX="9" refY="5"
-      markerWidth="5" markerHeight="5"
-      orient="auto-start-reverse">
-      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
-        fill="#8FA3BF" stroke="none"/>
-    </marker>
-    <marker id="arrow-gcp" viewBox="0 0 10 10"
-      refX="9" refY="5"
-      markerWidth="5" markerHeight="5"
-      orient="auto-start-reverse">
-      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
-        fill="#4285F4" stroke="none" fill-opacity="0.85"/>
-    </marker>
-    <marker id="arrow-azure" viewBox="0 0 10 10"
-      refX="9" refY="5"
-      markerWidth="5" markerHeight="5"
-      orient="auto-start-reverse">
-      <path d="M0,1.5 L8.5,5 L0,8.5 Z"
-        fill="#0078D4" stroke="none" fill-opacity="0.85"/>
-    </marker>
+    <!-- Arrow marker for the active provider only -->
+    ${arrowMarkerDefs}
   </defs>
   ${rootRect}${nodesOutput}${edgePathsOutput}${edgeLabelsOutput}${legendOutput}
 </svg>`;

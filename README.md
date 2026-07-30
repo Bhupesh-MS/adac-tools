@@ -190,7 +190,7 @@ When cloning this repo, pay attention to:
 
 1.  **Core** is a bundleable npm package.
 2.  **Core** uses `schema` for validation and `parser` for parsing.
-3.  **Core** supports `elk` and `custom` layout strategies.
+3.  **Core** supports `elk`, `custom`, and opt-in `orthogonal`/`tsm` layout strategies.
 4.  **CLI** is decoupled into its own package for clean command management.
 5.  **Diagram** provides both a CLI entry point and an npm module API.
 6.  **Web Server** consumes the `diagram` package as a standard npm module.

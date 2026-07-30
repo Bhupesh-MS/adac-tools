@@ -44,7 +44,7 @@
     },
     "layout": {
       "type": "string",
-      "enum": ["elk", "custom"],
+      "enum": ["elk", "custom", "orthogonal", "tsm"],
       "description": "Layout engine for the diagram"
     }
   },

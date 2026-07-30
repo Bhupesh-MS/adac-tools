@@ -2,6 +2,7 @@ import {
   generateDiagram as coreGenerateDiagram,
   generateDiagramSvg as coreGenerateDiagramSvg,
   type ComplianceTooltipMap,
+  type DiagramLayoutEngine,
   type GenerationResult,
 } from '@mindfiredigital/adac-core';
 import { parseAdacFromContent } from '@mindfiredigital/adac-parser';
@@ -40,7 +41,7 @@ export function buildComplianceTooltipMap(
 
 export async function generateDiagramSvg(
   inputContent: string,
-  layoutOverride?: 'elk' | 'custom',
+  layoutOverride?: DiagramLayoutEngine,
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',
@@ -72,7 +73,7 @@ export async function generateDiagramSvg(
 export async function generateDiagram(
   input: string,
   output: string,
-  layoutOverride?: 'elk' | 'custom',
+  layoutOverride?: DiagramLayoutEngine,
   validate: boolean = false,
   costData?: Record<string, number>,
   period: CostPeriod = 'monthly',

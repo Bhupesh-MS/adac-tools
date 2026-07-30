@@ -9,6 +9,9 @@ vi.mock('@mindfiredigital/adac-layout-core', () => ({
   CustomLayoutEngine: vi.fn().mockImplementation(function () {
     return { type: 'custom' };
   }),
+  OrthogonalLayoutEngine: vi.fn().mockImplementation(function () {
+    return { type: 'orthogonal' };
+  }),
 }));
 
 let elkMockError: any = null;
@@ -41,6 +44,16 @@ describe('createLayoutEngine', () => {
   it('returns ElkLayoutEngine when type is elk', async () => {
     const engine = await createLayoutEngine('elk');
     expect(engine).toEqual({ type: 'elk' });
+  });
+
+  it('returns OrthogonalLayoutEngine when type is orthogonal', async () => {
+    const engine = await createLayoutEngine('orthogonal');
+    expect(engine).toEqual({ type: 'orthogonal' });
+  });
+
+  it('returns OrthogonalLayoutEngine when type is tsm', async () => {
+    const engine = await createLayoutEngine('tsm');
+    expect(engine).toEqual({ type: 'orthogonal' });
   });
 
   it('uses custom engine in auto mode when complexity is false', async () => {

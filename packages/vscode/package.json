@@ -132,7 +132,9 @@
           "default": "custom",
           "enum": [
             "elk",
-            "custom"
+            "custom",
+            "orthogonal",
+            "tsm"
           ],
           "description": "Layout engine for diagram preview"
         }

@@ -85,7 +85,7 @@ export type CLIOptions = {
   generateDiagram: (
     input: string,
     output: string,
-    layoutOverride?: 'elk' | 'custom',
+    layoutOverride?: 'elk' | 'custom' | 'orthogonal' | 'tsm',
     validate?: boolean,
     costData?: Record<string, number>,
     period?: CostPeriod,

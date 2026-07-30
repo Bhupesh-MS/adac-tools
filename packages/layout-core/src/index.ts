@@ -5,6 +5,7 @@
 // ============================================
 
 export { CustomLayoutEngine } from './layout-engine';
+export { OrthogonalLayoutEngine } from './orthogonal-layout-engine';
 
 // ============================================
 // GRAPH STRUCTURES

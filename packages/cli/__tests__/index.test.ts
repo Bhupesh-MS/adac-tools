@@ -232,8 +232,13 @@ describe('CLI', () => {
       expect(fn).toHaveBeenCalled();
     });
 
-    it('should support both elk and custom layout engines', async () => {
-      const layouts: ('elk' | 'custom')[] = ['elk', 'custom'];
+    it('should support all diagram layout engines', async () => {
+      const layouts: Array<'elk' | 'custom' | 'orthogonal' | 'tsm'> = [
+        'elk',
+        'custom',
+        'orthogonal',
+        'tsm',
+      ];
 
       for (const layout of layouts) {
         const fn = mockCLIOptions.generateDiagram;

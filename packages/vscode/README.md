@@ -83,14 +83,14 @@ Every diagram preview includes an **Optimizer** panel below the diagram that aut
 
 ## Configuration
 
-| Setting                     | Default | Description                                 |
-| --------------------------- | ------- | ------------------------------------------- |
-| `adac.validation.enabled`   | `true`  | Enable real-time validation                 |
-| `adac.validation.onSave`    | `true`  | Validate on file save                       |
-| `adac.validation.onType`    | `true`  | Validate as you type                        |
-| `adac.diagram.theme`        | `auto`  | Diagram theme (auto/light/dark)             |
-| `adac.diagram.layoutEngine` | `elk`   | Layout engine (elk/custom)                  |
-| `adac.diagram.optimize`     | `true`  | Run architecture optimizer on every preview |
+| Setting                     | Default  | Description                                 |
+| --------------------------- | -------- | ------------------------------------------- |
+| `adac.validation.enabled`   | `true`   | Enable real-time validation                 |
+| `adac.validation.onSave`    | `true`   | Validate on file save                       |
+| `adac.validation.onType`    | `true`   | Validate as you type                        |
+| `adac.diagram.theme`        | `auto`   | Diagram theme (auto/light/dark)             |
+| `adac.diagram.layoutEngine` | `custom` | Layout engine (elk/custom/orthogonal/tsm)   |
+| `adac.diagram.optimize`     | `true`   | Run architecture optimizer on every preview |
 
 ## Getting Started
 

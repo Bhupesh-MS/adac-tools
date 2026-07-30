@@ -94,6 +94,58 @@ infrastructure:
     expect(resultElk.svg).toContain('<svg');
   });
 
+  it('should generate SVG with orthogonal layout engine', async () => {
+    const orthogonalYaml = `
+version: "0.1"
+metadata:
+  name: "Orthogonal Arch"
+  created: "2023-11-01"
+layout: orthogonal
+infrastructure:
+  clouds:
+    - id: "aws-1"
+      provider: "aws"
+      region: "us-east-1"
+      services:
+        - id: "api"
+          service: "lambda"
+          name: "API"
+        - id: "queue"
+          service: "sqs"
+          name: "Queue"
+        - id: "worker"
+          service: "lambda"
+          name: "Worker"
+connections:
+  - id: "api-to-queue"
+    from: "api"
+    to: "queue"
+    type: "message-publish"
+  - id: "queue-to-worker"
+    from: "queue"
+    to: "worker"
+    type: "message-consume"
+`;
+
+    const result = await generateDiagramSvg(orthogonalYaml, undefined, true);
+
+    expect(result.svg).toContain('<svg');
+    expect(result.svg).toContain('API');
+    expect(result.svg).toContain('Queue');
+    expect(result.svg).toContain('Worker');
+    expect(result.svg).toContain('data-layout="orthogonal"');
+    expect(result.svg.match(/<marker id=/g)).toHaveLength(1);
+    expect(result.svg).not.toContain('id="arrow-gcp"');
+    expect(result.svg).not.toContain('id="arrow-azure"');
+    expect(result.svg).not.toMatch(/<path d="[^"]* A /);
+  });
+
+  it('should reject unsupported layout engines', async () => {
+    await expect(
+      generateDiagramSvg(validYaml, 'invalid' as never)
+    ).rejects.toThrow(/Unsupported layout engine/);
+  });
+
   it('should include compliance tooltips when compliance checks fail', async () => {
     const result = await generateDiagramSvg(
       validYaml,

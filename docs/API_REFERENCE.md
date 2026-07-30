@@ -66,7 +66,7 @@ File-based wrapper. Reads YAML from `input` and writes SVG to `output`.
 
 ```
 adac diagram <file>   Generate SVG diagram
-  -l, --layout <type>     elk | custom (default: elk)
+  -l, --layout <type>     elk | custom | orthogonal | tsm (default: custom)
   -o, --output <path>     Output SVG path
   --validate              Run schema validation
   --cost                  Print cost breakdown
