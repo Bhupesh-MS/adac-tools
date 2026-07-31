@@ -653,6 +653,10 @@ function routeOrthogonalGlobalEdge(
         ),
         endpointCrossings: countEndpointBoxReentry(points, endpointBoxes),
         collisions: countOrthogonalRouteCollisions(points, obstacles, margin),
+        endpointClearance: countOrthogonalEndpointClearanceIssues(
+          points,
+          endpointBoxes
+        ),
         conflicts: countOrthogonalRouteSegmentConflicts(points, routedSegments),
         earlyTurns: countEarlyOrthogonalTurns(points),
       };
@@ -665,6 +669,9 @@ function routeOrthogonalGlobalEdge(
         return a.endpointCrossings - b.endpointCrossings;
       }
       if (a.collisions !== b.collisions) return a.collisions - b.collisions;
+      if (a.endpointClearance !== b.endpointClearance) {
+        return a.endpointClearance - b.endpointClearance;
+      }
       if (a.conflicts !== b.conflicts) return a.conflicts - b.conflicts;
       if (a.earlyTurns !== b.earlyTurns) return a.earlyTurns - b.earlyTurns;
       if (a.bends !== b.bends) return a.bends - b.bends;
@@ -708,6 +715,59 @@ function countEndpointBoxReentry(
     }
   }
   return crossings;
+}
+
+function countOrthogonalEndpointClearanceIssues(
+  points: { x: number; y: number }[],
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>
+) {
+  const minimumClearance = 40;
+  let issues = 0;
+
+  for (let i = 2; i < points.length - 3; i++) {
+    for (const box of endpointBoxes) {
+      issues += orthogonalSegmentBoxClearancePenalty(
+        points[i],
+        points[i + 1],
+        box,
+        minimumClearance
+      );
+    }
+  }
+
+  return issues;
+}
+
+function orthogonalSegmentBoxClearancePenalty(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  box: { x: number; y: number; w: number; h: number },
+  minimumClearance: number
+) {
+  const left = box.x;
+  const right = box.x + box.w;
+  const top = box.y;
+  const bottom = box.y + box.h;
+
+  if (a.x === b.x) {
+    const overlap = rangeOverlap(a.y, b.y, top, bottom);
+    if (overlap <= 0) return 0;
+
+    const distance = a.x < left ? left - a.x : a.x > right ? a.x - right : 0;
+    if (distance >= minimumClearance) return 0;
+    return (minimumClearance - distance) * Math.max(1, overlap / 10);
+  }
+
+  if (a.y === b.y) {
+    const overlap = rangeOverlap(a.x, b.x, left, right);
+    if (overlap <= 0) return 0;
+
+    const distance = a.y < top ? top - a.y : a.y > bottom ? a.y - bottom : 0;
+    if (distance >= minimumClearance) return 0;
+    return (minimumClearance - distance) * Math.max(1, overlap / 10);
+  }
+
+  return minimumClearance * 10;
 }
 
 function countOrthogonalEndpointApproachViolations(

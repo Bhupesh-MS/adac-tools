@@ -140,6 +140,30 @@ connections:
     expect(result.svg).not.toMatch(/<path d="[^"]* A /);
   });
 
+  it('should keep orthogonal route tracks clear of endpoint boxes', async () => {
+    const fixturePath = path.join(
+      process.cwd(),
+      '..',
+      '..',
+      'yamls',
+      'aws_enterprise_data_lake.adac.yaml'
+    );
+    const yaml = await fs.readFile(fixturePath, 'utf8');
+
+    const result = await generateDiagramSvg(
+      yaml,
+      'orthogonal',
+      false,
+      undefined,
+      'monthly',
+      true,
+      undefined,
+      async () => null
+    );
+
+    expect(result.svg).not.toContain('L 1322 122 L 1322 544');
+  });
+
   it('should reject unsupported layout engines', async () => {
     await expect(
       generateDiagramSvg(validYaml, 'invalid' as never)
