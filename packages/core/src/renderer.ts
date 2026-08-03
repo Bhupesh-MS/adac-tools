@@ -1236,6 +1236,50 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function compactOrthogonalSiblingColumns(
+  children: ElkNode[],
+  columnGap: number
+) {
+  if (children.length < 2) return children;
+
+  const columns = new Map<number, ElkNode[]>();
+  for (const child of children) {
+    const key = Math.round((child.x || 0) / 10) * 10;
+    const column = columns.get(key) || [];
+    column.push(child);
+    columns.set(key, column);
+  }
+
+  const orderedColumns = [...columns.entries()]
+    .map(([x, nodes]) => ({
+      x,
+      nodes,
+      minX: Math.min(...nodes.map((node) => node.x || 0)),
+      maxX: Math.max(...nodes.map((node) => (node.x || 0) + (node.width || 0))),
+    }))
+    .sort((a, b) => a.minX - b.minX);
+
+  if (orderedColumns.length < 2) return children;
+
+  let nextMinX = orderedColumns[0].minX;
+  const xShifts = new Map<ElkNode, number>();
+
+  for (const column of orderedColumns) {
+    const shift = Math.min(0, nextMinX - column.minX);
+    for (const node of column.nodes) {
+      xShifts.set(node, shift);
+    }
+
+    const shiftedMaxX = column.maxX + shift;
+    nextMinX = shiftedMaxX + columnGap;
+  }
+
+  return children.map((child) => ({
+    ...child,
+    x: (child.x || 0) + (xShifts.get(child) || 0),
+  }));
+}
+
 export async function renderSvg(
   graph: ElkNode,
   layoutEngine: 'elk' | 'custom' | 'orthogonal' | 'tsm' = 'elk',
@@ -1371,6 +1415,13 @@ export async function renderSvg(
           }
           return child;
         });
+
+        if (isOrthogonalLayout) {
+          positionedChildren = compactOrthogonalSiblingColumns(
+            positionedChildren,
+            80
+          );
+        }
       } else {
         // Flow Layout (Masonry) for tightly packing mixed-size items
         const isAz = (c: ElkNode) => hasCssClassToken(c, ZONE_CLASS_TOKENS);
@@ -1429,6 +1480,13 @@ export async function renderSvg(
         });
 
         positionedChildren = [...positionedAzs, ...positionedNonAz];
+
+        if (isOrthogonalLayout) {
+          positionedChildren = compactOrthogonalSiblingColumns(
+            positionedChildren,
+            80
+          );
+        }
       }
 
       // Compute container size from children bounds

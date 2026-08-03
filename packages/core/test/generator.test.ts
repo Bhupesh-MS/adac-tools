@@ -164,6 +164,31 @@ connections:
     expect(result.svg).not.toContain('L 1322 122 L 1322 544');
   });
 
+  it('should compact broad orthogonal diagrams to fit available space', async () => {
+    const fixturePath = path.join(
+      process.cwd(),
+      '..',
+      '..',
+      'yamls',
+      'microservices.adac.yaml'
+    );
+    const yaml = await fs.readFile(fixturePath, 'utf8');
+
+    const result = await generateDiagramSvg(
+      yaml,
+      'orthogonal',
+      false,
+      undefined,
+      'monthly',
+      true,
+      undefined,
+      async () => null
+    );
+    const width = Number(result.svg.match(/<svg width="([^"]+)"/)?.[1]);
+
+    expect(width).toBeLessThan(3000);
+  });
+
   it('should reject unsupported layout engines', async () => {
     await expect(
       generateDiagramSvg(validYaml, 'invalid' as never)
