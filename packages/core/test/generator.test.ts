@@ -23,6 +23,224 @@ vi.mock('@mindfiredigital/adac-validator', async (importOriginal) => {
   };
 });
 
+type SvgRect = { x: number; y: number; width: number; height: number };
+type SvgPoint = { x: number; y: number };
+type SvgNodeRect = SvgRect & { id: string; isLeaf: boolean };
+
+function extractNodeRect(svg: string, nodeId: string): SvgRect {
+  const match = svg.match(
+    new RegExp(
+      `<g id="node-${nodeId}"[\\s\\S]*?<rect x="([^"]+)" y="([^"]+)"\\s*width="([^"]+)" height="([^"]+)"`
+    )
+  );
+  if (!match) {
+    throw new Error(`Unable to find rect for node ${nodeId}`);
+  }
+
+  return {
+    x: Number(match[1]),
+    y: Number(match[2]),
+    width: Number(match[3]),
+    height: Number(match[4]),
+  };
+}
+
+function extractLeafRects(svg: string): Array<SvgRect & { id: string }> {
+  return Array.from(
+    svg.matchAll(
+      /<g id="node-([^"]+)"[\s\S]*?<rect x="([^"]+)" y="([^"]+)"\s*width="([^"]+)" height="([^"]+)"[\s\S]*?class="node-card/g
+    )
+  )
+    .filter((match) => !match[1].startsWith('group-'))
+    .map((match) => ({
+      id: match[1],
+      x: Number(match[2]),
+      y: Number(match[3]),
+      width: Number(match[4]),
+      height: Number(match[5]),
+    }));
+}
+
+function extractRenderedNodeRects(svg: string): SvgNodeRect[] {
+  const nodes: SvgNodeRect[] = [];
+  for (const match of svg.matchAll(
+    /<g id="node-([^"]+)">([\s\S]*?)(?=<g id="node-|<g id="legend"|<\/svg>)/g
+  )) {
+    const id = match[1];
+    const body = match[2];
+    for (const rect of body.matchAll(
+      /<rect x="([^"]+)" y="([^"]+)"\s*width="([^"]+)" height="([^"]+)"[\s\S]*?class="([^"]+)"/g
+    )) {
+      const classList = rect[5].split(/\s+/);
+      if (
+        !classList.includes('node-card') &&
+        !classList.some((className) => className.includes('container'))
+      ) {
+        continue;
+      }
+
+      nodes.push({
+        id,
+        x: Number(rect[1]),
+        y: Number(rect[2]),
+        width: Number(rect[3]),
+        height: Number(rect[4]),
+        isLeaf: classList.includes('node-card'),
+      });
+    }
+  }
+
+  return nodes;
+}
+
+function extractTitlePillRects(svg: string): SvgRect[] {
+  return Array.from(
+    svg.matchAll(
+      /<rect(?=[^>]*title-pill)[^>]*\sx="([^"]+)"[^>]*\sy="([^"]+)"[^>]*\swidth="([^"]+)"[^>]*\sheight="([^"]+)"[^>]*>/g
+    )
+  ).map((match) => ({
+    x: Number(match[1]),
+    y: Number(match[2]),
+    width: Number(match[3]),
+    height: Number(match[4]),
+  }));
+}
+
+function isAwsFixture(name: string, content: string) {
+  return (
+    name.startsWith('aws') ||
+    /provider:\s*['"]?aws['"]?/i.test(content) ||
+    /\bservice:\s*['"]?(cloudfront|s3|lambda|ecs|eks|rds|dynamodb|api-gateway|alb|waf|sqs|sns|kinesis|redshift|athena|glue|emr|cloudwatch|route53|cognito|kms|macie|firehose)/i.test(
+      content
+    )
+  );
+}
+
+function extractEdgePaths(svg: string): SvgPoint[][] {
+  return Array.from(
+    svg.matchAll(/<path d="([^"]+)" class="([^"]*aws-edge[^"]*)"/g)
+  ).map((match) => {
+    const values = Array.from(match[1].matchAll(/-?\d+(?:\.\d+)?/g)).map(
+      (value) => Number(value[0])
+    );
+    const points: SvgPoint[] = [];
+    for (let i = 0; i < values.length; i += 2) {
+      points.push({ x: values[i], y: values[i + 1] });
+    }
+    return points;
+  });
+}
+
+function rangeOverlap(
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number
+) {
+  return Math.max(
+    0,
+    Math.min(Math.max(aStart, aEnd), Math.max(bStart, bEnd)) -
+      Math.max(Math.min(aStart, aEnd), Math.min(bStart, bEnd))
+  );
+}
+
+function segmentIntersectsRectInterior(
+  a: SvgPoint,
+  b: SvgPoint,
+  rect: SvgRect,
+  margin = 10
+) {
+  const left = rect.x + margin;
+  const right = rect.x + rect.width - margin;
+  const top = rect.y + margin;
+  const bottom = rect.y + rect.height - margin;
+  if (left >= right || top >= bottom) return false;
+
+  if (a.x === b.x) {
+    return a.x > left && a.x < right && rangeOverlap(a.y, b.y, top, bottom) > 0;
+  }
+  if (a.y === b.y) {
+    return a.y > top && a.y < bottom && rangeOverlap(a.x, b.x, left, right) > 0;
+  }
+  return false;
+}
+
+function isPointOnRectBoundary(point: SvgPoint, rect: SvgRect) {
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+  const withinX = point.x >= rect.x - 0.5 && point.x <= right + 0.5;
+  const withinY = point.y >= rect.y - 0.5 && point.y <= bottom + 0.5;
+
+  return (
+    (Math.abs(point.x - rect.x) <= 0.5 && withinY) ||
+    (Math.abs(point.x - right) <= 0.5 && withinY) ||
+    (Math.abs(point.y - rect.y) <= 0.5 && withinX) ||
+    (Math.abs(point.y - bottom) <= 0.5 && withinX)
+  );
+}
+
+function findPathBetweenRects(
+  paths: SvgPoint[][],
+  source: SvgRect,
+  target: SvgRect
+) {
+  return paths.find((points) => {
+    const first = points[0];
+    const last = points[points.length - 1];
+    return (
+      (isPointOnRectBoundary(first, source) &&
+        isPointOnRectBoundary(last, target)) ||
+      (isPointOnRectBoundary(first, target) &&
+        isPointOnRectBoundary(last, source))
+    );
+  });
+}
+
+function countOverlappingParallelSegments(paths: SvgPoint[][]) {
+  const segments = paths.flatMap((points, pathIndex) =>
+    points.slice(0, -1).flatMap((point, segmentIndex) => {
+      const next = points[segmentIndex + 1];
+      if (segmentIndex === 0 || segmentIndex === points.length - 2) return [];
+      if (point.x !== next.x && point.y !== next.y) return [];
+      return [
+        {
+          pathIndex,
+          segmentIndex,
+          a: point,
+          b: next,
+          vertical: point.x === next.x,
+        },
+      ];
+    })
+  );
+  let overlaps = 0;
+
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i + 1; j < segments.length; j++) {
+      const left = segments[i];
+      const right = segments[j];
+      if (
+        left.pathIndex === right.pathIndex ||
+        left.vertical !== right.vertical
+      ) {
+        continue;
+      }
+
+      if (left.vertical) {
+        const distance = Math.abs(left.a.x - right.a.x);
+        const amount = rangeOverlap(left.a.y, left.b.y, right.a.y, right.b.y);
+        if (amount > 8 && distance < 1.5) overlaps++;
+      } else {
+        const distance = Math.abs(left.a.y - right.a.y);
+        const amount = rangeOverlap(left.a.x, left.b.x, right.a.x, right.b.x);
+        if (amount > 8 && distance < 1.5) overlaps++;
+      }
+    }
+  }
+
+  return overlaps;
+}
+
 describe('ADAC Core Generator', () => {
   const validYaml = `
 version: "0.1"
@@ -161,7 +379,31 @@ connections:
       async () => null
     );
 
-    expect(result.svg).not.toContain('L 1322 122 L 1322 544');
+    const paths = extractEdgePaths(result.svg);
+    const leafRects = extractLeafRects(result.svg);
+    const titlePillRects = extractTitlePillRects(result.svg);
+
+    const edgeHitsLeaf = paths.some((points) =>
+      points
+        .slice(0, -1)
+        .some((point, index) =>
+          leafRects.some((rect) =>
+            segmentIntersectsRectInterior(point, points[index + 1], rect)
+          )
+        )
+    );
+    const edgeHitsTitlePill = paths.some((points) =>
+      points
+        .slice(0, -1)
+        .some((point, index) =>
+          titlePillRects.some((rect) =>
+            segmentIntersectsRectInterior(point, points[index + 1], rect, -8)
+          )
+        )
+    );
+
+    expect(edgeHitsLeaf).toBe(false);
+    expect(edgeHitsTitlePill).toBe(false);
   });
 
   it('should compact broad orthogonal diagrams to fit available space', async () => {
@@ -187,6 +429,124 @@ connections:
     const width = Number(result.svg.match(/<svg width="([^"]+)"/)?.[1]);
 
     expect(width).toBeLessThan(3000);
+  });
+
+  it('should keep adjacent orthogonal block edges local', async () => {
+    const fixturePath = path.join(
+      process.cwd(),
+      '..',
+      '..',
+      'yamls',
+      'aws_serverless_ecommerce.adac.yaml'
+    );
+    const yaml = await fs.readFile(fixturePath, 'utf8');
+
+    const result = await generateDiagramSvg(
+      yaml,
+      'orthogonal',
+      false,
+      undefined,
+      'monthly',
+      true,
+      undefined,
+      async () => null
+    );
+
+    const cloudfront = extractNodeRect(result.svg, 'cloudfront-dist');
+    const s3 = extractNodeRect(result.svg, 's3-bucket-ui');
+    const edgePath = findPathBetweenRects(
+      extractEdgePaths(result.svg),
+      cloudfront,
+      s3
+    );
+
+    expect(edgePath).toBeDefined();
+    const minX = Math.min(...edgePath!.map((point) => point.x));
+    const maxX = Math.max(...edgePath!.map((point) => point.x));
+    const minY = Math.min(...edgePath!.map((point) => point.y));
+    const maxY = Math.max(...edgePath!.map((point) => point.y));
+
+    expect(minX).toBeGreaterThanOrEqual(cloudfront.x + cloudfront.width - 1);
+    expect(maxX).toBeLessThanOrEqual(s3.x + 1);
+    expect(minY).toBeGreaterThanOrEqual(
+      Math.min(cloudfront.y, s3.y) + Math.min(cloudfront.height, s3.height) / 2
+    );
+    expect(maxY).toBeLessThanOrEqual(s3.y + s3.height + 1);
+  });
+
+  it('should keep AWS orthogonal fixture edges attached and clear of blocks', async () => {
+    const yamlDir = path.join(process.cwd(), '..', '..', 'yamls');
+    const fixtureNames = (await fs.readdir(yamlDir)).filter((file) =>
+      file.endsWith('.yaml')
+    );
+    const issues: string[] = [];
+
+    for (const fixtureName of fixtureNames) {
+      const fixturePath = path.join(yamlDir, fixtureName);
+      const yaml = await fs.readFile(fixturePath, 'utf8');
+      if (!isAwsFixture(fixtureName, yaml)) continue;
+
+      const result = await generateDiagramSvg(
+        yaml,
+        'orthogonal',
+        false,
+        undefined,
+        'monthly',
+        true,
+        undefined,
+        async () => null
+      );
+
+      const nodes = extractRenderedNodeRects(result.svg);
+      const leaves = nodes.filter((node) => node.isLeaf);
+      const titlePills = extractTitlePillRects(result.svg);
+
+      const paths = extractEdgePaths(result.svg);
+      const overlaps = countOverlappingParallelSegments(paths);
+      if (overlaps > 0) {
+        issues.push(`${fixtureName}: ${overlaps} overlapping edge segments`);
+      }
+
+      paths.forEach((points, pathIndex) => {
+        const start = points[0];
+        const end = points[points.length - 1];
+        if (
+          !nodes.some((node) => isPointOnRectBoundary(start, node)) ||
+          !nodes.some((node) => isPointOnRectBoundary(end, node))
+        ) {
+          issues.push(
+            `${fixtureName}: edge ${pathIndex} has detached endpoint`
+          );
+        }
+
+        points.slice(0, -1).forEach((point, segmentIndex) => {
+          const next = points[segmentIndex + 1];
+          const leafHit = leaves.find((rect) =>
+            segmentIntersectsRectInterior(point, next, rect)
+          );
+          if (leafHit) {
+            issues.push(
+              `${fixtureName}: edge ${pathIndex} crosses leaf ${leafHit.id}`
+            );
+          }
+
+          const isEndpointApproach =
+            segmentIndex === 0 || segmentIndex === points.length - 2;
+          const titleHit =
+            !isEndpointApproach &&
+            titlePills.some((rect) =>
+              segmentIntersectsRectInterior(point, next, rect, -8)
+            );
+          if (titleHit) {
+            issues.push(
+              `${fixtureName}: edge ${pathIndex} crosses a title pill`
+            );
+          }
+        });
+      });
+    }
+
+    expect(issues).toEqual([]);
   });
 
   it('should reject unsupported layout engines', async () => {

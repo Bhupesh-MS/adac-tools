@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@mindfiredigital/adac-diagram": "workspace:*",
-    "body-parser": "^1.20.2",
+    "body-parser": "^1.20.6",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "express": "^5.2.1",

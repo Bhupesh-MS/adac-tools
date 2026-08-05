@@ -488,6 +488,15 @@ function isBetween(
   );
 }
 
+type RoutingObstacle = {
+  id?: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  isLeaf?: boolean;
+};
+
 function routeOrthogonalGlobalEdge(
   startPoint: { x: number; y: number },
   endPoint: { x: number; y: number },
@@ -496,7 +505,7 @@ function routeOrthogonalGlobalEdge(
   startSide: OrthogonalSide,
   endSide: OrthogonalSide,
   endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>,
-  obstacles: { x: number; y: number; w: number; h: number }[],
+  obstacles: RoutingObstacle[],
   preferVertical: boolean,
   verticalTracks: Map<number, number>,
   horizontalTracks: Map<number, number>,
@@ -653,6 +662,10 @@ function routeOrthogonalGlobalEdge(
         ),
         endpointCrossings: countEndpointBoxReentry(points, endpointBoxes),
         collisions: countOrthogonalRouteCollisions(points, obstacles, margin),
+        containerIntrusion: countOrthogonalContainerIntrusion(
+          points,
+          obstacles
+        ),
         endpointClearance: countOrthogonalEndpointClearanceIssues(
           points,
           endpointBoxes
@@ -662,13 +675,16 @@ function routeOrthogonalGlobalEdge(
       };
     })
     .sort((a, b) => {
+      if (a.collisions !== b.collisions) return a.collisions - b.collisions;
       if (a.approachViolations !== b.approachViolations) {
         return a.approachViolations - b.approachViolations;
       }
       if (a.endpointCrossings !== b.endpointCrossings) {
         return a.endpointCrossings - b.endpointCrossings;
       }
-      if (a.collisions !== b.collisions) return a.collisions - b.collisions;
+      if (a.containerIntrusion !== b.containerIntrusion) {
+        return a.containerIntrusion - b.containerIntrusion;
+      }
       if (a.endpointClearance !== b.endpointClearance) {
         return a.endpointClearance - b.endpointClearance;
       }
@@ -692,7 +708,6 @@ function routeOrthogonalGlobalEdge(
   if (selected?.yTrack !== undefined) {
     markOrthogonalTrack(selected.yTrack, horizontalTracks);
   }
-  appendOrthogonalSegments(best, routedSegments);
 
   return simplifyOrthogonalPoints(
     best.map((point) => ({
@@ -700,6 +715,167 @@ function routeOrthogonalGlobalEdge(
       y: point.y,
     }))
   ).slice(1, -1);
+}
+
+function routeMinimalOrthogonalEdge(
+  startPoint: { x: number; y: number },
+  endPoint: { x: number; y: number },
+  startStub: { x: number; y: number },
+  endStub: { x: number; y: number },
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>,
+  leafObstacles: RoutingObstacle[],
+  activeObstacles: RoutingObstacle[],
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  const yLanes = new Set<number>([
+    snapOrthogonalTrack(startStub.y),
+    snapOrthogonalTrack(endStub.y),
+  ]);
+  const xLanes = new Set<number>([
+    snapOrthogonalTrack(startStub.x),
+    snapOrthogonalTrack(endStub.x),
+  ]);
+  const laneGap = 32;
+
+  for (const baseY of [startStub.y, endStub.y]) {
+    for (let i = 1; i <= 4; i++) {
+      yLanes.add(snapOrthogonalTrack(baseY + i * laneGap));
+      yLanes.add(snapOrthogonalTrack(baseY - i * laneGap));
+    }
+  }
+  for (const baseX of [startStub.x, endStub.x]) {
+    for (let i = 1; i <= 4; i++) {
+      xLanes.add(snapOrthogonalTrack(baseX + i * laneGap));
+      xLanes.add(snapOrthogonalTrack(baseX - i * laneGap));
+    }
+  }
+
+  for (const obstacle of leafObstacles) {
+    yLanes.add(snapOrthogonalTrack(obstacle.y - 28));
+    yLanes.add(snapOrthogonalTrack(obstacle.y + obstacle.h + 28));
+    xLanes.add(snapOrthogonalTrack(obstacle.x - 28));
+    xLanes.add(snapOrthogonalTrack(obstacle.x + obstacle.w + 28));
+  }
+
+  for (const box of endpointBoxes) {
+    yLanes.add(snapOrthogonalTrack(box.y - 36));
+    yLanes.add(snapOrthogonalTrack(box.y + box.h + 36));
+    xLanes.add(snapOrthogonalTrack(box.x - 36));
+    xLanes.add(snapOrthogonalTrack(box.x + box.w + 36));
+  }
+
+  const candidates: { points: { x: number; y: number }[]; index: number }[] =
+    [];
+  const addCandidate = (points: { x: number; y: number }[]) => {
+    candidates.push({ points, index: candidates.length });
+  };
+
+  addCandidate([
+    startPoint,
+    startStub,
+    { x: endStub.x, y: startStub.y },
+    endStub,
+    endPoint,
+  ]);
+  addCandidate([
+    startPoint,
+    startStub,
+    { x: startStub.x, y: endStub.y },
+    endStub,
+    endPoint,
+  ]);
+
+  for (const laneY of yLanes) {
+    addCandidate([
+      startPoint,
+      startStub,
+      { x: startStub.x, y: laneY },
+      { x: endStub.x, y: laneY },
+      endStub,
+      endPoint,
+    ]);
+  }
+
+  for (const laneX of xLanes) {
+    addCandidate([
+      startPoint,
+      startStub,
+      { x: laneX, y: startStub.y },
+      { x: laneX, y: endStub.y },
+      endStub,
+      endPoint,
+    ]);
+  }
+
+  for (const laneY of yLanes) {
+    for (const laneX of xLanes) {
+      addCandidate([
+        startPoint,
+        startStub,
+        { x: startStub.x, y: laneY },
+        { x: laneX, y: laneY },
+        { x: laneX, y: endStub.y },
+        endStub,
+        endPoint,
+      ]);
+      addCandidate([
+        startPoint,
+        startStub,
+        { x: laneX, y: startStub.y },
+        { x: laneX, y: laneY },
+        { x: endStub.x, y: laneY },
+        endStub,
+        endPoint,
+      ]);
+    }
+  }
+
+  const best = candidates
+    .map((candidate) => {
+      const points = simplifyOrthogonalPoints(candidate.points);
+      return {
+        ...candidate,
+        points,
+        leafCollisions: countOrthogonalRouteCollisions(
+          points,
+          leafObstacles,
+          18
+        ),
+        containerCollisions: countOrthogonalRouteCollisions(
+          points,
+          activeObstacles.filter((obstacle) => !obstacle.isLeaf),
+          12
+        ),
+        endpointReentry: countEndpointBoxReentry(points, endpointBoxes),
+        conflicts: countOrthogonalRouteSegmentConflicts(points, routedSegments),
+        length: orthogonalPathLength(points),
+        bends: Math.max(0, points.length - 2),
+      };
+    })
+    .sort((a, b) => {
+      if (a.leafCollisions !== b.leafCollisions) {
+        return a.leafCollisions - b.leafCollisions;
+      }
+      if (a.endpointReentry !== b.endpointReentry) {
+        return a.endpointReentry - b.endpointReentry;
+      }
+      if (a.containerCollisions !== b.containerCollisions) {
+        return a.containerCollisions - b.containerCollisions;
+      }
+      if (a.conflicts !== b.conflicts) return a.conflicts - b.conflicts;
+      if (a.bends !== b.bends) return a.bends - b.bends;
+      if (a.length !== b.length) return a.length - b.length;
+      return a.index - b.index;
+    })[0];
+
+  if (!best || best.leafCollisions > 0 || best.endpointReentry > 0) {
+    return undefined;
+  }
+
+  return best.points.slice(1, -1);
 }
 
 function countEndpointBoxReentry(
@@ -736,6 +912,25 @@ function countOrthogonalEndpointClearanceIssues(
   }
 
   return issues;
+}
+
+function countOrthogonalContainerIntrusion(
+  points: { x: number; y: number }[],
+  obstacles: RoutingObstacle[]
+) {
+  const clearance = 36;
+  let score = 0;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    for (const obstacle of obstacles) {
+      if (obstacle.isLeaf) continue;
+      score += orthogonalSegmentBoxClearancePenalty(a, b, obstacle, clearance);
+    }
+  }
+
+  return score;
 }
 
 function orthogonalSegmentBoxClearancePenalty(
@@ -845,7 +1040,7 @@ function orthogonalSegmentConflictScore(
     );
     if (overlap <= 0) return 0;
     if (distance === 0) return overlap * 20;
-    if (distance < 18) return overlap * 4;
+    if (distance < 28) return overlap * 6;
     return 0;
   }
 
@@ -858,7 +1053,7 @@ function orthogonalSegmentConflictScore(
   );
   if (overlap <= 0) return 0;
   if (distance === 0) return overlap * 20;
-  if (distance < 18) return overlap * 4;
+  if (distance < 28) return overlap * 6;
   return 0;
 }
 
@@ -912,10 +1107,14 @@ function buildOrthogonalTrackCandidates(
   for (const obstacle of obstacles) {
     if (axis === 'x') {
       values.add(snapOrthogonalTrack(obstacle.x - margin - 10));
+      values.add(snapOrthogonalTrack(obstacle.x - margin - 70));
       values.add(snapOrthogonalTrack(obstacle.x + obstacle.w + margin + 10));
+      values.add(snapOrthogonalTrack(obstacle.x + obstacle.w + margin + 70));
     } else {
       values.add(snapOrthogonalTrack(obstacle.y - margin - 10));
+      values.add(snapOrthogonalTrack(obstacle.y - margin - 70));
       values.add(snapOrthogonalTrack(obstacle.y + obstacle.h + margin + 10));
+      values.add(snapOrthogonalTrack(obstacle.y + obstacle.h + margin + 70));
     }
   }
 
@@ -946,6 +1145,456 @@ function countOrthogonalRouteCollisions(
     }
   }
   return collisions;
+}
+
+function repairOrthogonalTitlePillCollisions(
+  points: { x: number; y: number }[],
+  titlePills: { x: number; y: number; w: number; h: number }[],
+  obstacles: RoutingObstacle[],
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  let repaired = simplifyOrthogonalPoints(points);
+  const gateClearance = 64;
+  const pillClearance = 8;
+
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    const next: { x: number; y: number }[] = [repaired[0]];
+
+    for (let i = 0; i < repaired.length - 1; i++) {
+      const a = next[next.length - 1];
+      const b = repaired[i + 1];
+      const isEndpointApproach = i === 0 || i === repaired.length - 2;
+      const hit = titlePills.find((pill) =>
+        orthogonalSegmentIntersectsBox(a, b, pill, pillClearance)
+      );
+
+      if (!hit || isEndpointApproach) {
+        next.push(b);
+        continue;
+      }
+
+      changed = true;
+      if (a.x === b.x) {
+        const gateX = chooseTitlePillRepairPath(
+          [
+            snapOrthogonalTrack(hit.x + hit.w + gateClearance),
+            snapOrthogonalTrack(hit.x - gateClearance),
+          ].map((x) => [{ x, y: a.y }, { x, y: b.y }, b]),
+          a,
+          obstacles,
+          routedSegments
+        )[0].x;
+        next.push({ x: gateX, y: a.y }, { x: gateX, y: b.y }, b);
+      } else {
+        const gateY = chooseTitlePillRepairPath(
+          [
+            snapOrthogonalTrack(hit.y + hit.h + gateClearance),
+            snapOrthogonalTrack(hit.y - gateClearance),
+          ].map((y) => [{ x: a.x, y }, { x: b.x, y }, b]),
+          a,
+          obstacles,
+          routedSegments
+        )[0].y;
+        next.push({ x: a.x, y: gateY }, { x: b.x, y: gateY }, b);
+      }
+    }
+
+    repaired = simplifyOrthogonalPoints(next);
+    if (!changed) break;
+  }
+
+  return repaired;
+}
+
+function chooseTitlePillRepairPath(
+  candidates: { x: number; y: number }[][],
+  start: { x: number; y: number },
+  obstacles: RoutingObstacle[],
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  return [...candidates].sort((left, right) => {
+    const leftPoints = [start, ...left];
+    const rightPoints = [start, ...right];
+    const leftCollisions = countOrthogonalRouteCollisions(
+      leftPoints,
+      obstacles,
+      18
+    );
+    const rightCollisions = countOrthogonalRouteCollisions(
+      rightPoints,
+      obstacles,
+      18
+    );
+    if (leftCollisions !== rightCollisions) {
+      return leftCollisions - rightCollisions;
+    }
+
+    const conflictDelta =
+      countOrthogonalRouteSegmentConflicts(leftPoints, routedSegments) -
+      countOrthogonalRouteSegmentConflicts(rightPoints, routedSegments);
+    if (conflictDelta !== 0) return conflictDelta;
+    return orthogonalPathLength(leftPoints) - orthogonalPathLength(rightPoints);
+  })[0];
+}
+
+function repairOrthogonalLeafCollisions(
+  points: { x: number; y: number }[],
+  leafObstacles: RoutingObstacle[],
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>,
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  let repaired = simplifyOrthogonalPoints(points);
+  const clearance = 36;
+
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    const next: { x: number; y: number }[] = [repaired[0]];
+
+    for (let i = 0; i < repaired.length - 1; i++) {
+      const a = next[next.length - 1];
+      const b = repaired[i + 1];
+      const hit = leafObstacles.find((obstacle) =>
+        orthogonalSegmentIntersectsBox(a, b, obstacle, 18)
+      );
+
+      if (!hit) {
+        next.push(b);
+        continue;
+      }
+
+      changed = true;
+      if (a.x === b.x) {
+        const candidates = [
+          snapOrthogonalTrack(hit.x - clearance),
+          snapOrthogonalTrack(hit.x + hit.w + clearance),
+        ].map((x) => [{ x, y: a.y }, { x, y: b.y }, b]);
+        next.push(
+          ...chooseLeafRepairPath(
+            a,
+            candidates,
+            leafObstacles,
+            endpointBoxes,
+            routedSegments
+          )
+        );
+      } else {
+        const candidates = [
+          snapOrthogonalTrack(hit.y - clearance),
+          snapOrthogonalTrack(hit.y + hit.h + clearance),
+        ].map((y) => [{ x: a.x, y }, { x: b.x, y }, b]);
+        next.push(
+          ...chooseLeafRepairPath(
+            a,
+            candidates,
+            leafObstacles,
+            endpointBoxes,
+            routedSegments
+          )
+        );
+      }
+    }
+
+    repaired = simplifyOrthogonalPoints(next);
+    if (!changed) break;
+  }
+
+  return repaired;
+}
+
+function chooseLeafRepairPath(
+  start: { x: number; y: number },
+  candidates: { x: number; y: number }[][],
+  leafObstacles: RoutingObstacle[],
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>,
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  return [...candidates].sort((left, right) => {
+    const leftPoints = [start, ...left];
+    const rightPoints = [start, ...right];
+    const leftLeafCollisions = countOrthogonalRouteCollisions(
+      leftPoints,
+      leafObstacles,
+      18
+    );
+    const rightLeafCollisions = countOrthogonalRouteCollisions(
+      rightPoints,
+      leafObstacles,
+      18
+    );
+    if (leftLeafCollisions !== rightLeafCollisions) {
+      return leftLeafCollisions - rightLeafCollisions;
+    }
+
+    const leftEndpointReentry = countEndpointBoxReentry(
+      leftPoints,
+      endpointBoxes
+    );
+    const rightEndpointReentry = countEndpointBoxReentry(
+      rightPoints,
+      endpointBoxes
+    );
+    if (leftEndpointReentry !== rightEndpointReentry) {
+      return leftEndpointReentry - rightEndpointReentry;
+    }
+
+    const conflictDelta =
+      countOrthogonalRouteSegmentConflicts(leftPoints, routedSegments) -
+      countOrthogonalRouteSegmentConflicts(rightPoints, routedSegments);
+    if (conflictDelta !== 0) return conflictDelta;
+    return orthogonalPathLength(leftPoints) - orthogonalPathLength(rightPoints);
+  })[0];
+}
+
+function countOrthogonalTwists(points: { x: number; y: number }[]) {
+  let twists = 0;
+  for (let i = 0; i < points.length - 2; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const c = points[i + 2];
+    const dx1 = Math.sign(b.x - a.x);
+    const dy1 = Math.sign(b.y - a.y);
+    const dx2 = Math.sign(c.x - b.x);
+    const dy2 = Math.sign(c.y - b.y);
+    if ((dx1 && dx2 && dx1 !== dx2) || (dy1 && dy2 && dy1 !== dy2)) {
+      twists++;
+    }
+  }
+  return twists;
+}
+
+function cleanupOrthogonalShortReversals(
+  points: { x: number; y: number }[],
+  leafObstacles: RoutingObstacle[],
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>,
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  let cleaned = simplifyOrthogonalPoints(points);
+
+  for (let pass = 0; pass < 4; pass++) {
+    const currentMetrics = {
+      leafCollisions: countOrthogonalRouteCollisions(
+        cleaned,
+        leafObstacles,
+        18
+      ),
+      endpointReentry: countEndpointBoxReentry(cleaned, endpointBoxes),
+      conflicts: countOrthogonalRouteSegmentConflicts(cleaned, routedSegments),
+      twists: countOrthogonalTwists(cleaned),
+    };
+    if (currentMetrics.twists === 0) break;
+
+    let accepted: { x: number; y: number }[] | undefined;
+    for (let i = 1; i < cleaned.length - 1; i++) {
+      const prev = cleaned[i - 1];
+      const point = cleaned[i];
+      const next = cleaned[i + 1];
+      const horizontal = prev.y === point.y && point.y === next.y;
+      const vertical = prev.x === point.x && point.x === next.x;
+      if (!horizontal && !vertical) continue;
+
+      const firstDirection = horizontal
+        ? Math.sign(point.x - prev.x)
+        : Math.sign(point.y - prev.y);
+      const secondDirection = horizontal
+        ? Math.sign(next.x - point.x)
+        : Math.sign(next.y - point.y);
+      if (
+        !firstDirection ||
+        !secondDirection ||
+        firstDirection === secondDirection
+      ) {
+        continue;
+      }
+
+      const shortLeg = horizontal
+        ? Math.min(Math.abs(point.x - prev.x), Math.abs(next.x - point.x))
+        : Math.min(Math.abs(point.y - prev.y), Math.abs(next.y - point.y));
+      if (shortLeg > 64) continue;
+
+      const candidate = simplifyOrthogonalPoints([
+        ...cleaned.slice(0, i),
+        ...cleaned.slice(i + 1),
+      ]);
+      const candidateMetrics = {
+        leafCollisions: countOrthogonalRouteCollisions(
+          candidate,
+          leafObstacles,
+          18
+        ),
+        endpointReentry: countEndpointBoxReentry(candidate, endpointBoxes),
+        conflicts: countOrthogonalRouteSegmentConflicts(
+          candidate,
+          routedSegments
+        ),
+        twists: countOrthogonalTwists(candidate),
+      };
+
+      if (
+        candidateMetrics.twists < currentMetrics.twists &&
+        candidateMetrics.leafCollisions <= currentMetrics.leafCollisions &&
+        candidateMetrics.endpointReentry <= currentMetrics.endpointReentry &&
+        candidateMetrics.conflicts <= currentMetrics.conflicts
+      ) {
+        accepted = candidate;
+        break;
+      }
+    }
+
+    if (!accepted) break;
+    cleaned = accepted;
+  }
+
+  return cleaned;
+}
+
+function repairOrthogonalExactOverlaps(
+  points: { x: number; y: number }[],
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>,
+  leafObstacles: RoutingObstacle[],
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>
+) {
+  let repaired = simplifyOrthogonalPoints(points);
+  const laneOffsets = [18, -18, 28, -28, 40, -40, 56, -56, 72, -72];
+
+  for (let pass = 0; pass < 4; pass++) {
+    const currentOverlap = countExactOrthogonalRouteOverlaps(
+      repaired,
+      routedSegments
+    );
+    if (currentOverlap === 0) break;
+
+    let accepted: { x: number; y: number }[] | undefined;
+    for (let i = 1; i < repaired.length - 2; i++) {
+      const a = repaired[i];
+      const b = repaired[i + 1];
+      if (a.x !== b.x && a.y !== b.y) continue;
+      if (countExactOrthogonalRouteOverlaps([a, b], routedSegments) === 0) {
+        continue;
+      }
+
+      const candidates = laneOffsets.map((offset) => {
+        if (a.x === b.x) {
+          const x = snapOrthogonalTrack(a.x + offset);
+          return simplifyOrthogonalPoints([
+            ...repaired.slice(0, i + 1),
+            { x, y: a.y },
+            { x, y: b.y },
+            ...repaired.slice(i + 1),
+          ]);
+        }
+
+        const y = snapOrthogonalTrack(a.y + offset);
+        return simplifyOrthogonalPoints([
+          ...repaired.slice(0, i + 1),
+          { x: a.x, y },
+          { x: b.x, y },
+          ...repaired.slice(i + 1),
+        ]);
+      });
+
+      const best = candidates
+        .map((candidate, index) => ({
+          candidate,
+          index,
+          exactOverlaps: countExactOrthogonalRouteOverlaps(
+            candidate,
+            routedSegments
+          ),
+          leafCollisions: countOrthogonalRouteCollisions(
+            candidate,
+            leafObstacles,
+            18
+          ),
+          endpointReentry: countEndpointBoxReentry(candidate, endpointBoxes),
+          conflicts: countOrthogonalRouteSegmentConflicts(
+            candidate,
+            routedSegments
+          ),
+          twists: countOrthogonalTwists(candidate),
+          length: orthogonalPathLength(candidate),
+        }))
+        .filter(
+          (candidate) =>
+            candidate.exactOverlaps < currentOverlap &&
+            candidate.leafCollisions === 0 &&
+            candidate.endpointReentry === 0
+        )
+        .sort((left, right) => {
+          if (left.exactOverlaps !== right.exactOverlaps) {
+            return left.exactOverlaps - right.exactOverlaps;
+          }
+          if (left.twists !== right.twists) return left.twists - right.twists;
+          if (left.conflicts !== right.conflicts) {
+            return left.conflicts - right.conflicts;
+          }
+          if (left.length !== right.length) return left.length - right.length;
+          return left.index - right.index;
+        })[0];
+
+      if (best) {
+        accepted = best.candidate;
+        break;
+      }
+    }
+
+    if (!accepted) break;
+    repaired = accepted;
+  }
+
+  return repaired;
+}
+
+function countExactOrthogonalRouteOverlaps(
+  points: { x: number; y: number }[],
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>
+) {
+  let overlaps = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const current = { a: points[i], b: points[i + 1] };
+    for (const routed of routedSegments) {
+      if (exactOrthogonalSegmentOverlap(current, routed) > 8) overlaps++;
+    }
+  }
+  return overlaps;
+}
+
+function exactOrthogonalSegmentOverlap(
+  current: { a: { x: number; y: number }; b: { x: number; y: number } },
+  routed: { a: { x: number; y: number }; b: { x: number; y: number } }
+) {
+  const currentVertical = current.a.x === current.b.x;
+  const routedVertical = routed.a.x === routed.b.x;
+  if (currentVertical !== routedVertical) return 0;
+
+  if (currentVertical) {
+    if (Math.abs(current.a.x - routed.a.x) >= 1.5) return 0;
+    return rangeOverlap(current.a.y, current.b.y, routed.a.y, routed.b.y);
+  }
+
+  if (Math.abs(current.a.y - routed.a.y) >= 1.5) return 0;
+  return rangeOverlap(current.a.x, current.b.x, routed.a.x, routed.b.x);
 }
 
 function orthogonalSegmentIntersectsBox(
@@ -1003,7 +1652,10 @@ function chooseOrthogonalSide(
   connectionCount: number
 ) {
   const preferredUsage = usage.get(`${nodeId}:${preferred}`) || 0;
-  if (connectionCount < 2 || preferredUsage === 0) return preferred;
+  const preferredCapacity = Math.max(2, Math.ceil(connectionCount / 2));
+  if (connectionCount < 2 || preferredUsage <= preferredCapacity) {
+    return preferred;
+  }
 
   return [...ORTHOGONAL_SIDES].sort((a, b) => {
     const usageDelta =
@@ -1117,7 +1769,15 @@ function preferredOrthogonalSides(
 }
 
 function orthogonalSidePort(
-  pos: { id: string; x: number; y: number; w: number; h: number },
+  pos: {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    type?: string;
+    label?: string;
+  },
   side: OrthogonalSide,
   usage: Map<string, number>,
   topAdjust = 0
@@ -1148,11 +1808,228 @@ function orthogonalSidePort(
 
   const minX = Math.min(right - inset, left + inset);
   const maxX = Math.max(left + inset, right - inset);
+  const x = clamp(pos.x + pos.w / 2 + offset, minX, maxX);
+  const y = side === 'top' ? orthogonalTopPortY(pos, x, top) : bottom;
+
   return {
-    x: clamp(pos.x + pos.w / 2 + offset, minX, maxX),
-    y: side === 'top' ? top : bottom,
+    x,
+    y,
     stubDistance: 20 + count * 16,
   };
+}
+
+function chooseConflictAwareOrthogonalSides(
+  source: {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    type?: string;
+    label?: string;
+  },
+  target: {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    type?: string;
+    label?: string;
+  },
+  preferredSourceSide: OrthogonalSide,
+  preferredTargetSide: OrthogonalSide,
+  visualPortUsage: Map<string, number>,
+  activeObstacles: RoutingObstacle[],
+  endpointBoxes: Array<{ x: number; y: number; w: number; h: number }>,
+  routedSegments: Array<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }>,
+  sourceTopAdjust: number,
+  targetTopAdjust: number
+) {
+  const evaluateCandidate = (
+    sourceSide: OrthogonalSide,
+    targetSide: OrthogonalSide
+  ) => {
+    const usage = new Map(visualPortUsage);
+    const sourcePort = orthogonalSidePort(
+      source,
+      sourceSide,
+      usage,
+      sourceTopAdjust
+    );
+    const targetPort = orthogonalSidePort(
+      target,
+      targetSide,
+      usage,
+      targetTopAdjust
+    );
+    const sourceStub = orthogonalStub(
+      sourcePort,
+      sourceSide,
+      sourcePort.stubDistance
+    );
+    const targetStub = orthogonalStub(
+      targetPort,
+      targetSide,
+      targetPort.stubDistance
+    );
+    const routeOptions = [
+      simplifyOrthogonalPoints([
+        sourcePort,
+        sourceStub,
+        { x: targetStub.x, y: sourceStub.y },
+        targetStub,
+        targetPort,
+      ]),
+      simplifyOrthogonalPoints([
+        sourcePort,
+        sourceStub,
+        { x: sourceStub.x, y: targetStub.y },
+        targetStub,
+        targetPort,
+      ]),
+    ];
+    const bestRoute = routeOptions
+      .map((points) => ({
+        points,
+        collisions: countOrthogonalRouteCollisions(points, activeObstacles, 12),
+        conflicts: countOrthogonalRouteSegmentConflicts(points, routedSegments),
+        endpointReentry: countEndpointBoxReentry(points, endpointBoxes),
+        endpointConflicts:
+          countOrthogonalRouteSegmentConflicts(
+            points.slice(0, 2),
+            routedSegments
+          ) +
+          countOrthogonalRouteSegmentConflicts(
+            points.slice(-2),
+            routedSegments
+          ),
+        twists: countOrthogonalTwists(points),
+        length: orthogonalPathLength(points),
+      }))
+      .sort((left, right) => {
+        if (left.collisions !== right.collisions) {
+          return left.collisions - right.collisions;
+        }
+        if (left.endpointReentry !== right.endpointReentry) {
+          return left.endpointReentry - right.endpointReentry;
+        }
+        if (left.twists !== right.twists) return left.twists - right.twists;
+        if (left.endpointConflicts !== right.endpointConflicts) {
+          return left.endpointConflicts - right.endpointConflicts;
+        }
+        if (left.conflicts !== right.conflicts) {
+          return left.conflicts - right.conflicts;
+        }
+        return left.length - right.length;
+      })[0];
+
+    const sideDistance =
+      orthogonalSideDistance(sourceSide, preferredSourceSide) +
+      orthogonalSideDistance(targetSide, preferredTargetSide);
+    const sourceUsage = visualPortUsage.get(`${source.id}:${sourceSide}`) || 0;
+    const targetUsage = visualPortUsage.get(`${target.id}:${targetSide}`) || 0;
+
+    return {
+      sourceSide,
+      targetSide,
+      sideDistance,
+      sourceUsage,
+      targetUsage,
+      conflicts: bestRoute.conflicts,
+      endpointConflicts: bestRoute.endpointConflicts,
+      endpointReentry: bestRoute.endpointReentry,
+      collisions: bestRoute.collisions,
+      twists: bestRoute.twists,
+      length: bestRoute.length,
+    };
+  };
+
+  const horizontalLocalRelationship =
+    (source.x + source.w <= target.x || target.x + target.w <= source.x) &&
+    Math.max(source.y, target.y) <=
+      Math.min(source.y + source.h, target.y + target.h);
+
+  if (horizontalLocalRelationship) {
+    return source.x + source.w <= target.x
+      ? evaluateCandidate('right', 'left')
+      : evaluateCandidate('left', 'right');
+  }
+
+  const preferred = evaluateCandidate(preferredSourceSide, preferredTargetSide);
+  if (
+    preferred.collisions === 0 &&
+    preferred.endpointReentry === 0 &&
+    preferred.endpointConflicts === 0
+  ) {
+    return preferred;
+  }
+
+  const candidates: Array<{
+    sourceSide: OrthogonalSide;
+    targetSide: OrthogonalSide;
+    sideDistance: number;
+    sourceUsage: number;
+    targetUsage: number;
+    conflicts: number;
+    endpointConflicts: number;
+    endpointReentry: number;
+    collisions: number;
+    twists: number;
+    length: number;
+  }> = [];
+
+  for (const sourceSide of ORTHOGONAL_SIDES) {
+    for (const targetSide of ORTHOGONAL_SIDES) {
+      candidates.push(evaluateCandidate(sourceSide, targetSide));
+    }
+  }
+
+  const best = candidates
+    .filter(
+      (candidate) =>
+        candidate.collisions === 0 &&
+        candidate.endpointReentry === 0 &&
+        candidate.twists === 0 &&
+        candidate.endpointConflicts < preferred.endpointConflicts
+    )
+    .sort((left, right) => {
+      if (left.endpointConflicts !== right.endpointConflicts) {
+        return left.endpointConflicts - right.endpointConflicts;
+      }
+      if (left.sideDistance !== right.sideDistance) {
+        return left.sideDistance - right.sideDistance;
+      }
+      const usageDelta =
+        left.sourceUsage +
+        left.targetUsage -
+        (right.sourceUsage + right.targetUsage);
+      if (usageDelta !== 0) return usageDelta;
+      if (left.conflicts !== right.conflicts) {
+        return left.conflicts - right.conflicts;
+      }
+      return left.length - right.length;
+    })[0];
+
+  return best ?? preferred;
+}
+
+function orthogonalTopPortY(
+  pos: { x: number; y: number; w: number; type?: string; label?: string },
+  x: number,
+  fallbackTop: number
+) {
+  if (pos.type !== 'container') return fallbackTop;
+
+  const { actualLabelW } = calculateLabelDimensions(pos.label, pos.w);
+  const pillLeft = pos.x + 16;
+  const pillRight = pillLeft + actualLabelW;
+  return x >= pillLeft - 5 && x <= pillRight + 5
+    ? Math.min(fallbackTop, pos.y - 14)
+    : fallbackTop;
 }
 
 function orthogonalStub(
@@ -1167,8 +2044,22 @@ function orthogonalStub(
 }
 
 function directOrthogonalConnection(
-  source: { x: number; y: number; w: number; h: number },
-  target: { x: number; y: number; w: number; h: number },
+  source: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    type?: string;
+    label?: string;
+  },
+  target: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    type?: string;
+    label?: string;
+  },
   sourceSide: OrthogonalSide,
   targetSide: OrthogonalSide,
   obstacles: { x: number; y: number; w: number; h: number }[]
@@ -1205,14 +2096,20 @@ function directOrthogonalConnection(
     Math.abs(sourceCx - targetCx) <= tolerance
   ) {
     startPoint = { x: sourceCx, y: source.y + source.h };
-    endPoint = { x: targetCx, y: target.y };
+    endPoint = {
+      x: targetCx,
+      y: orthogonalTopPortY(target, targetCx, target.y),
+    };
   } else if (
     sourceSide === 'top' &&
     targetSide === 'bottom' &&
     target.y + target.h <= source.y &&
     Math.abs(sourceCx - targetCx) <= tolerance
   ) {
-    startPoint = { x: sourceCx, y: source.y };
+    startPoint = {
+      x: sourceCx,
+      y: orthogonalTopPortY(source, sourceCx, source.y),
+    };
     endPoint = { x: targetCx, y: target.y + target.h };
   }
 
@@ -1552,21 +2449,39 @@ export async function renderSvg(
     };
     buildAbsPositions(layout, 0, 0);
 
-    const allObstacles: {
-      id: string;
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      isLeaf: boolean;
-    }[] = Array.from(absPositions.values()).map((p) => ({
-      id: p.id,
-      x: p.x,
-      y: p.y,
-      w: p.w,
-      h: p.h,
-      isLeaf: p.isLeaf,
-    }));
+    const getPillBounds = (pos: { x: number; w: number; label?: string }) => {
+      const { actualLabelW } = calculateLabelDimensions(pos.label, pos.w);
+      return { left: pos.x + 16, right: pos.x + 16 + actualLabelW };
+    };
+
+    const allObstacles: RoutingObstacle[] = Array.from(
+      absPositions.values()
+    ).flatMap((p) => {
+      const bounds: RoutingObstacle[] = [
+        {
+          id: p.id,
+          x: p.x,
+          y: p.y,
+          w: p.w,
+          h: p.h,
+          isLeaf: p.isLeaf,
+        },
+      ];
+
+      if (isOrthogonalLayout && !p.isLeaf) {
+        const pillBounds = getPillBounds(p);
+        bounds.push({
+          id: `${p.id}:title-pill`,
+          x: pillBounds.left,
+          y: p.y - 14,
+          w: pillBounds.right - pillBounds.left,
+          h: 28,
+          isLeaf: false,
+        });
+      }
+
+      return bounds;
+    });
 
     // ── Route ALL original edges using A* ──
     const routedEdges: ElkEdge[] = [];
@@ -1618,11 +2533,6 @@ export async function renderSvg(
       return sign * mag;
     };
 
-    const getPillBounds = (pos: { x: number; w: number; label?: string }) => {
-      const { actualLabelW } = calculateLabelDimensions(pos.label, pos.w);
-      return { left: pos.x + 16, right: pos.x + 16 + actualLabelW };
-    };
-
     const getActiveObstacles = (srcId: string, tgtId: string) => {
       const skipIds = new Set<string>();
       const addParentChain = (nodeId: string) => {
@@ -1635,7 +2545,16 @@ export async function renderSvg(
       };
       addParentChain(srcId);
       addParentChain(tgtId);
-      return allObstacles.filter((o) => !skipIds.has(o.id));
+      return allObstacles.filter((o) => !o.id || !skipIds.has(o.id));
+    };
+
+    const isAncestorOf = (ancestorId: string, nodeId: string) => {
+      let current = parentChain.get(nodeId);
+      while (current) {
+        if (current === ancestorId) return true;
+        current = parentChain.get(current);
+      }
+      return false;
     };
 
     const directPriority = (edge: ElkEdge) => {
@@ -1664,9 +2583,22 @@ export async function renderSvg(
         : 1;
     };
 
+    const edgeRouteDistance = (edge: ElkEdge) => {
+      const srcPos = absPositions.get(edge.sources[0]);
+      const tgtPos = absPositions.get(edge.targets[0]);
+      if (!srcPos || !tgtPos) return Number.POSITIVE_INFINITY;
+      const srcCx = srcPos.x + srcPos.w / 2;
+      const srcCy = srcPos.y + srcPos.h / 2;
+      const tgtCx = tgtPos.x + tgtPos.w / 2;
+      const tgtCy = tgtPos.y + tgtPos.h / 2;
+      return Math.abs(srcCx - tgtCx) + Math.abs(srcCy - tgtCy);
+    };
+
     const orderedOriginalEdges = isOrthogonalLayout
       ? [...allOriginalEdges].sort(
-          (a, b) => directPriority(a) - directPriority(b)
+          (a, b) =>
+            directPriority(a) - directPriority(b) ||
+            edgeRouteDistance(a) - edgeRouteDistance(b)
         )
       : allOriginalEdges;
 
@@ -1743,91 +2675,189 @@ export async function renderSvg(
       let routeSourceSide: OrthogonalSide | undefined;
       let routeTargetSide: OrthogonalSide | undefined;
       let directOrthogonalRoute = false;
+      let presetOrthogonalBends: { x: number; y: number }[] | undefined;
+      const endpointBoxes = [
+        { x: srcPos.x, y: srcPos.y, w: srcPos.w, h: srcPos.h },
+        { x: tgtPos.x, y: tgtPos.y, w: tgtPos.w, h: tgtPos.h },
+      ];
 
       // Filter obstacles: treat all non-ancestor nodes (both leaf and container) as solid obstacles
       const activeObstacles = getActiveObstacles(srcId, tgtId);
+      const leafObstacles = activeObstacles.filter(
+        (obstacle) =>
+          obstacle.isLeaf && obstacle.id !== srcId && obstacle.id !== tgtId
+      );
 
       if (isOrthogonalLayout) {
-        let { sourceSide, targetSide } = preferredOrthogonalSides(
-          srcPos,
-          tgtPos,
-          srcBot,
-          tgtTop
-        );
-        const sourceConnectionCount =
-          (incomingEdgeCounts.get(srcId) || 0) +
-          (outgoingEdgeCounts.get(srcId) || 0);
-        const targetConnectionCount =
-          (incomingEdgeCounts.get(tgtId) || 0) +
-          (outgoingEdgeCounts.get(tgtId) || 0);
+        const sourceContainsTarget = isAncestorOf(srcId, tgtId);
+        const targetContainsSource = isAncestorOf(tgtId, srcId);
 
-        const directConnection = directOrthogonalConnection(
-          srcPos,
-          tgtPos,
-          sourceSide,
-          targetSide,
-          activeObstacles
-        );
+        if (sourceContainsTarget || targetContainsSource) {
+          const containerPos = sourceContainsTarget ? srcPos : tgtPos;
+          const childPos = sourceContainsTarget ? tgtPos : srcPos;
+          const sideLaneX = containerPos.x + containerPos.w + 36;
+          const containerSideY = clamp(
+            childPos.y + 20,
+            containerPos.y + 56,
+            containerPos.y + containerPos.h - 32
+          );
+          const childBottomY = childPos.y + childPos.h;
+          const childBottomX = childPos.x + childPos.w / 2;
+          const belowContainerY = containerPos.y + containerPos.h + 36;
+          const aboveContainerY = containerPos.y - 36;
+          const layoutBottom = layout.height || belowContainerY;
+          const childApproachY =
+            belowContainerY < layoutBottom - 32
+              ? belowContainerY
+              : aboveContainerY;
+          const containerPort = {
+            x: containerPos.x + containerPos.w,
+            y: containerSideY,
+          };
+          const childPort = { x: childBottomX, y: childBottomY };
+          const bendsFromContainer = simplifyOrthogonalPoints([
+            containerPort,
+            { x: sideLaneX, y: containerSideY },
+            { x: sideLaneX, y: childApproachY },
+            { x: childBottomX, y: childApproachY },
+            childPort,
+          ]).slice(1, -1);
 
-        if (directConnection) {
-          startPt = directConnection.startPoint;
-          endPt = directConnection.endPoint;
+          startPt = sourceContainsTarget ? containerPort : childPort;
+          endPt = sourceContainsTarget ? childPort : containerPort;
+          presetOrthogonalBends = sourceContainsTarget
+            ? bendsFromContainer
+            : [...bendsFromContainer].reverse();
           startStub = startPt;
           endStub = endPt;
-          routeSourceSide = sourceSide;
-          routeTargetSide = targetSide;
-          directOrthogonalRoute = true;
-          markOrthogonalSideUsage(srcId, sourceSide, orthogonalSourcePortUsage);
-          markOrthogonalSideUsage(tgtId, targetSide, orthogonalTargetPortUsage);
-          markOrthogonalVisualPortUsage(
-            srcId,
-            sourceSide,
-            orthogonalVisualPortUsage
-          );
-          markOrthogonalVisualPortUsage(
-            tgtId,
-            targetSide,
-            orthogonalVisualPortUsage
-          );
-          appendOrthogonalSegments([startPt, endPt], orthogonalRoutedSegments);
+          routeSourceSide = sourceContainsTarget ? 'right' : 'bottom';
+          routeTargetSide = sourceContainsTarget ? 'bottom' : 'right';
         } else {
-          sourceSide = chooseOrthogonalSide(
-            srcId,
-            sourceSide,
-            orthogonalVisualPortUsage,
-            sourceConnectionCount
-          );
-          targetSide = chooseOrthogonalSide(
-            tgtId,
-            targetSide,
-            orthogonalVisualPortUsage,
-            targetConnectionCount
-          );
-          markOrthogonalSideUsage(srcId, sourceSide, orthogonalSourcePortUsage);
-          markOrthogonalSideUsage(tgtId, targetSide, orthogonalTargetPortUsage);
-          routeSourceSide = sourceSide;
-          routeTargetSide = targetSide;
-
-          const sourcePort = orthogonalSidePort(
+          let { sourceSide, targetSide } = preferredOrthogonalSides(
             srcPos,
-            sourceSide,
-            orthogonalVisualPortUsage,
-            srcTopAdjust
-          );
-          const targetPort = orthogonalSidePort(
             tgtPos,
-            targetSide,
-            orthogonalVisualPortUsage,
-            tgtTopAdjust
+            srcBot,
+            tgtTop
           );
-          startPt = sourcePort;
-          endPt = targetPort;
-          startStub = orthogonalStub(
-            startPt,
+          const sourceConnectionCount =
+            (incomingEdgeCounts.get(srcId) || 0) +
+            (outgoingEdgeCounts.get(srcId) || 0);
+          const targetConnectionCount =
+            (incomingEdgeCounts.get(tgtId) || 0) +
+            (outgoingEdgeCounts.get(tgtId) || 0);
+          const directConnection = directOrthogonalConnection(
+            srcPos,
+            tgtPos,
             sourceSide,
-            sourcePort.stubDistance
+            targetSide,
+            activeObstacles
           );
-          endStub = orthogonalStub(endPt, targetSide, targetPort.stubDistance);
+          const directConnectionHasConflict = directConnection
+            ? countOrthogonalRouteSegmentConflicts(
+                [directConnection.startPoint, directConnection.endPoint],
+                orthogonalRoutedSegments
+              ) > 0
+            : false;
+
+          if (directConnection && !directConnectionHasConflict) {
+            startPt = directConnection.startPoint;
+            endPt = directConnection.endPoint;
+            startStub = startPt;
+            endStub = endPt;
+            routeSourceSide = sourceSide;
+            routeTargetSide = targetSide;
+            directOrthogonalRoute = true;
+            markOrthogonalSideUsage(
+              srcId,
+              sourceSide,
+              orthogonalSourcePortUsage
+            );
+            markOrthogonalSideUsage(
+              tgtId,
+              targetSide,
+              orthogonalTargetPortUsage
+            );
+            markOrthogonalVisualPortUsage(
+              srcId,
+              sourceSide,
+              orthogonalVisualPortUsage
+            );
+            markOrthogonalVisualPortUsage(
+              tgtId,
+              targetSide,
+              orthogonalVisualPortUsage
+            );
+            appendOrthogonalSegments(
+              [startPt, endPt],
+              orthogonalRoutedSegments
+            );
+          } else {
+            if (!directConnection) {
+              sourceSide = chooseOrthogonalSide(
+                srcId,
+                sourceSide,
+                orthogonalVisualPortUsage,
+                sourceConnectionCount
+              );
+              targetSide = chooseOrthogonalSide(
+                tgtId,
+                targetSide,
+                orthogonalVisualPortUsage,
+                targetConnectionCount
+              );
+            }
+            const selectedSides = chooseConflictAwareOrthogonalSides(
+              srcPos,
+              tgtPos,
+              sourceSide,
+              targetSide,
+              orthogonalVisualPortUsage,
+              activeObstacles,
+              endpointBoxes,
+              orthogonalRoutedSegments,
+              srcTopAdjust,
+              tgtTopAdjust
+            );
+            sourceSide = selectedSides.sourceSide;
+            targetSide = selectedSides.targetSide;
+            markOrthogonalSideUsage(
+              srcId,
+              sourceSide,
+              orthogonalSourcePortUsage
+            );
+            markOrthogonalSideUsage(
+              tgtId,
+              targetSide,
+              orthogonalTargetPortUsage
+            );
+            routeSourceSide = sourceSide;
+            routeTargetSide = targetSide;
+
+            const sourcePort = orthogonalSidePort(
+              srcPos,
+              sourceSide,
+              orthogonalVisualPortUsage,
+              srcTopAdjust
+            );
+            const targetPort = orthogonalSidePort(
+              tgtPos,
+              targetSide,
+              orthogonalVisualPortUsage,
+              tgtTopAdjust
+            );
+            startPt = sourcePort;
+            endPt = targetPort;
+            startStub = orthogonalStub(
+              startPt,
+              sourceSide,
+              sourcePort.stubDistance
+            );
+            endStub = orthogonalStub(
+              endPt,
+              targetSide,
+              targetPort.stubDistance
+            );
+          }
         }
       } else if (isVertical) {
         if (tgtTop > srcBot - 10) {
@@ -1856,26 +2886,36 @@ export async function renderSvg(
       }
 
       let mappedBends: { x: number; y: number }[];
-      if (isOrthogonalLayout && directOrthogonalRoute) {
+      if (isOrthogonalLayout && presetOrthogonalBends) {
+        mappedBends = presetOrthogonalBends;
+      } else if (isOrthogonalLayout && directOrthogonalRoute) {
         mappedBends = [];
       } else if (isOrthogonalLayout) {
-        mappedBends = routeOrthogonalGlobalEdge(
-          startPt,
-          endPt,
-          startStub,
-          endStub,
-          routeSourceSide!,
-          routeTargetSide!,
-          [
-            { x: srcPos.x, y: srcPos.y, w: srcPos.w, h: srcPos.h },
-            { x: tgtPos.x, y: tgtPos.y, w: tgtPos.w, h: tgtPos.h },
-          ],
-          activeObstacles,
-          isVertical,
-          orthogonalVerticalTracks,
-          orthogonalHorizontalTracks,
-          orthogonalRoutedSegments
-        );
+        mappedBends =
+          routeMinimalOrthogonalEdge(
+            startPt,
+            endPt,
+            startStub,
+            endStub,
+            endpointBoxes,
+            leafObstacles,
+            activeObstacles,
+            orthogonalRoutedSegments
+          ) ??
+          routeOrthogonalGlobalEdge(
+            startPt,
+            endPt,
+            startStub,
+            endStub,
+            routeSourceSide!,
+            routeTargetSide!,
+            endpointBoxes,
+            activeObstacles,
+            isVertical,
+            orthogonalVerticalTracks,
+            orthogonalHorizontalTracks,
+            orthogonalRoutedSegments
+          );
       } else {
         try {
           const astarResult = routeAStar(
@@ -1898,6 +2938,35 @@ export async function renderSvg(
             { x: startStub.x, y: midY },
             { x: endStub.x, y: midY },
           ];
+        }
+      }
+
+      if (isOrthogonalLayout) {
+        mappedBends = repairOrthogonalLeafCollisions(
+          [startPt, ...mappedBends, endPt],
+          leafObstacles,
+          endpointBoxes,
+          orthogonalRoutedSegments
+        ).slice(1, -1);
+        mappedBends = repairOrthogonalTitlePillCollisions(
+          [startPt, ...mappedBends, endPt],
+          allObstacles.filter((obstacle) =>
+            obstacle.id?.endsWith(':title-pill')
+          ),
+          activeObstacles,
+          orthogonalRoutedSegments
+        ).slice(1, -1);
+        mappedBends = cleanupOrthogonalShortReversals(
+          [startPt, ...mappedBends, endPt],
+          leafObstacles,
+          endpointBoxes,
+          orthogonalRoutedSegments
+        ).slice(1, -1);
+        if (!directOrthogonalRoute) {
+          appendOrthogonalSegments(
+            [startPt, ...mappedBends, endPt],
+            orthogonalRoutedSegments
+          );
         }
       }
 
@@ -2159,7 +3228,7 @@ export async function renderSvg(
             const crossesContainerY =
               segBottom >= original.top && segTop <= original.bottom;
 
-            if (crossesContainerX) {
+            if (sourceInside && targetInside && crossesContainerX) {
               top = Math.min(top, segTop - containerPadding);
               bottom = Math.max(bottom, segBottom + containerPadding);
             }
@@ -2168,6 +3237,40 @@ export async function renderSvg(
               right = Math.max(right, segRight + containerPadding);
             }
           }
+        }
+      }
+
+      for (const box of allNodeBoxes) {
+        if (box.id === containerId || isWithinContainer(box.id, containerId)) {
+          continue;
+        }
+
+        const overlapsX = box.right > left && box.x < right;
+        const overlapsY = box.bottom > top && box.y < bottom;
+
+        if (overlapsX && box.bottom > top && box.y < original.top) {
+          top = Math.min(
+            original.top,
+            Math.max(top, box.bottom + containerPadding)
+          );
+        }
+        if (overlapsX && box.y < bottom && box.bottom > original.bottom) {
+          bottom = Math.max(
+            original.bottom,
+            Math.min(bottom, box.y - containerPadding)
+          );
+        }
+        if (overlapsY && box.right > left && box.x < original.left) {
+          left = Math.min(
+            original.left,
+            Math.max(left, box.right + containerPadding)
+          );
+        }
+        if (overlapsY && box.x < right && box.right > original.right) {
+          right = Math.max(
+            original.right,
+            Math.min(right, box.x - containerPadding)
+          );
         }
       }
 
@@ -2184,6 +3287,115 @@ export async function renderSvg(
         existingBox.y = top;
         existingBox.right = right;
         existingBox.bottom = bottom;
+      }
+    }
+
+    const renderedTitlePills: RoutingObstacle[] = Array.from(nodesMap.values())
+      .filter((node) => node.properties?.type === 'container')
+      .flatMap((containerNode) => {
+        const containerId = containerNode.id;
+        const pos = nodeAbsPos.get(containerId);
+        if (!pos) return [];
+
+        const visualBounds = orthogonalContainerVisualBounds.get(containerId);
+        const containerX = visualBounds?.x ?? pos.x;
+        const containerY = visualBounds?.y ?? pos.y;
+        const containerW = visualBounds?.w ?? containerNode.width ?? 0;
+        const { actualLabelW } = calculateLabelDimensions(
+          containerNode.labels?.[0]?.text || '',
+          containerW
+        );
+
+        return [
+          {
+            id: `${containerId}:rendered-title-pill`,
+            x: containerX + 16,
+            y: containerY - 14,
+            w: actualLabelW,
+            h: 28,
+            isLeaf: false,
+          },
+        ];
+      });
+
+    for (const edge of allEdges) {
+      for (const section of edge.sections || []) {
+        const repaired = repairOrthogonalTitlePillCollisions(
+          [section.startPoint, ...(section.bendPoints || []), section.endPoint],
+          renderedTitlePills,
+          renderedTitlePills,
+          []
+        );
+        section.bendPoints = repaired.slice(1, -1);
+      }
+    }
+
+    const finalOrthogonalSegments: Array<{
+      a: { x: number; y: number };
+      b: { x: number; y: number };
+    }> = [];
+    for (const edge of allEdges) {
+      const srcId = edge.sources?.[0];
+      const tgtId = edge.targets?.[0];
+      const srcPos = srcId ? nodeAbsPos.get(srcId) : undefined;
+      const tgtPos = tgtId ? nodeAbsPos.get(tgtId) : undefined;
+      const srcNode = srcId ? nodesMap.get(srcId) : undefined;
+      const tgtNode = tgtId ? nodesMap.get(tgtId) : undefined;
+      const endpointBoxes =
+        srcPos && tgtPos && srcNode && tgtNode
+          ? [
+              {
+                x: srcPos.x,
+                y: srcPos.y,
+                w: srcNode.width || 0,
+                h: srcNode.height || 0,
+              },
+              {
+                x: tgtPos.x,
+                y: tgtPos.y,
+                w: tgtNode.width || 0,
+                h: tgtNode.height || 0,
+              },
+            ]
+          : [];
+      const leafObstacles =
+        srcId && tgtId
+          ? allNodeBoxes
+              .filter(
+                (box) =>
+                  !box.isContainer && box.id !== srcId && box.id !== tgtId
+              )
+              .map((box) => ({
+                id: box.id,
+                x: box.x,
+                y: box.y,
+                w: box.right - box.x,
+                h: box.bottom - box.y,
+                isLeaf: true,
+              }))
+          : [];
+
+      for (const section of edge.sections || []) {
+        let repaired = repairOrthogonalExactOverlaps(
+          [section.startPoint, ...(section.bendPoints || []), section.endPoint],
+          finalOrthogonalSegments,
+          leafObstacles,
+          endpointBoxes
+        );
+        repaired = repairOrthogonalTitlePillCollisions(
+          repaired,
+          renderedTitlePills,
+          renderedTitlePills,
+          finalOrthogonalSegments
+        );
+        repaired = cleanupOrthogonalShortReversals(
+          repaired,
+          leafObstacles,
+          endpointBoxes,
+          finalOrthogonalSegments
+        );
+        section.bendPoints = repaired.slice(1, -1);
+        appendOrthogonalSegments(repaired, finalOrthogonalSegments);
       }
     }
   }

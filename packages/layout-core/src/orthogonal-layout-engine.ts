@@ -225,14 +225,35 @@ class TrackAllocator {
   private readonly used = new Map<number, number>();
 
   reserve(preferred: number, minimumGap: number): number {
-    const key = snap(preferred);
+    const key = snap(Math.max(minimumGap, preferred));
     const count = this.used.get(key) ?? 0;
     this.used.set(key, count + 1);
     if (count === 0) return key;
 
     const direction = count % 2 === 0 ? -1 : 1;
     const distance = Math.ceil(count / 2) * minimumGap;
-    return snap(key + direction * distance);
+    return snap(Math.max(minimumGap, key + direction * distance));
+  }
+
+  reserveClear(
+    candidates: number[],
+    minimumGap: number,
+    isClear: (track: number) => boolean
+  ): number | undefined {
+    for (const candidate of candidates) {
+      const key = snap(Math.max(minimumGap, candidate));
+      const count = this.used.get(key) ?? 0;
+
+      for (const offset of trackOffsets(count, minimumGap)) {
+        const track = snap(Math.max(minimumGap, key + offset));
+        if (!isClear(track)) continue;
+
+        this.used.set(key, count + 1);
+        return track;
+      }
+    }
+
+    return undefined;
   }
 }
 
@@ -252,21 +273,197 @@ function routeBetweenBoxes(
     const start = dx >= 0 ? rightPort(source) : leftPort(source);
     const end = dx >= 0 ? leftPort(target) : rightPort(target);
     const rawTrack = (start.x + end.x) / 2;
-    const track = verticalTracks.reserve(
-      clearVerticalTrack(rawTrack, source, target, boxes, edgeMargin),
+    const verticalCandidates = clearVerticalTrackCandidates(
+      rawTrack,
+      source,
+      target,
+      boxes,
       edgeMargin
     );
-    return [start, { x: track, y: start.y }, { x: track, y: end.y }, end];
+    const verticalTrack = verticalTracks.reserveClear(
+      verticalCandidates,
+      edgeMargin,
+      (track) =>
+        isPathClear(
+          [start, { x: track, y: start.y }, { x: track, y: end.y }, end],
+          source,
+          target,
+          boxes,
+          edgeMargin
+        )
+    );
+
+    if (verticalTrack !== undefined) {
+      return [
+        start,
+        { x: verticalTrack, y: start.y },
+        { x: verticalTrack, y: end.y },
+        end,
+      ];
+    }
+
+    const startDirection = dx >= 0 ? 1 : -1;
+    const endDirection = dx >= 0 ? -1 : 1;
+    const horizontalCandidates = clearHorizontalTrackCandidates(
+      (start.y + end.y) / 2,
+      source,
+      target,
+      boxes,
+      edgeMargin
+    );
+    const horizontalTrack = horizontalTracks.reserveClear(
+      horizontalCandidates,
+      edgeMargin,
+      (track) =>
+        isPathClear(
+          buildHorizontalDetour(
+            start,
+            end,
+            startDirection,
+            endDirection,
+            track,
+            edgeMargin
+          ),
+          source,
+          target,
+          boxes,
+          edgeMargin
+        )
+    );
+
+    if (horizontalTrack !== undefined) {
+      return buildHorizontalDetour(
+        start,
+        end,
+        startDirection,
+        endDirection,
+        horizontalTrack,
+        edgeMargin
+      );
+    }
+
+    return shortestPathByCollisions(
+      [
+        ...verticalCandidates.map((track) => [
+          start,
+          { x: track, y: start.y },
+          { x: track, y: end.y },
+          end,
+        ]),
+        ...horizontalCandidates.map((track) =>
+          buildHorizontalDetour(
+            start,
+            end,
+            startDirection,
+            endDirection,
+            track,
+            edgeMargin
+          )
+        ),
+      ],
+      source,
+      target,
+      boxes,
+      edgeMargin
+    );
   }
 
   const start = dy >= 0 ? bottomPort(source) : topPort(source);
   const end = dy >= 0 ? topPort(target) : bottomPort(target);
   const rawTrack = (start.y + end.y) / 2;
-  const track = horizontalTracks.reserve(
-    clearHorizontalTrack(rawTrack, source, target, boxes, edgeMargin),
+  const horizontalCandidates = clearHorizontalTrackCandidates(
+    rawTrack,
+    source,
+    target,
+    boxes,
     edgeMargin
   );
-  return [start, { x: start.x, y: track }, { x: end.x, y: track }, end];
+  const horizontalTrack = horizontalTracks.reserveClear(
+    horizontalCandidates,
+    edgeMargin,
+    (track) =>
+      isPathClear(
+        [start, { x: start.x, y: track }, { x: end.x, y: track }, end],
+        source,
+        target,
+        boxes,
+        edgeMargin
+      )
+  );
+
+  if (horizontalTrack !== undefined) {
+    return [
+      start,
+      { x: start.x, y: horizontalTrack },
+      { x: end.x, y: horizontalTrack },
+      end,
+    ];
+  }
+
+  const startDirection = dy >= 0 ? 1 : -1;
+  const endDirection = dy >= 0 ? -1 : 1;
+  const verticalCandidates = clearVerticalTrackCandidates(
+    (start.x + end.x) / 2,
+    source,
+    target,
+    boxes,
+    edgeMargin
+  );
+  const verticalTrack = verticalTracks.reserveClear(
+    verticalCandidates,
+    edgeMargin,
+    (track) =>
+      isPathClear(
+        buildVerticalDetour(
+          start,
+          end,
+          startDirection,
+          endDirection,
+          track,
+          edgeMargin
+        ),
+        source,
+        target,
+        boxes,
+        edgeMargin
+      )
+  );
+
+  if (verticalTrack !== undefined) {
+    return buildVerticalDetour(
+      start,
+      end,
+      startDirection,
+      endDirection,
+      verticalTrack,
+      edgeMargin
+    );
+  }
+
+  return shortestPathByCollisions(
+    [
+      ...horizontalCandidates.map((track) => [
+        start,
+        { x: start.x, y: track },
+        { x: end.x, y: track },
+        end,
+      ]),
+      ...verticalCandidates.map((track) =>
+        buildVerticalDetour(
+          start,
+          end,
+          startDirection,
+          endDirection,
+          track,
+          edgeMargin
+        )
+      ),
+    ],
+    source,
+    target,
+    boxes,
+    edgeMargin
+  );
 }
 
 function routeSelfLoop(
@@ -291,56 +488,245 @@ function routeSelfLoop(
   ];
 }
 
-function clearVerticalTrack(
+function clearVerticalTrackCandidates(
   preferred: number,
   source: RouteBox,
   target: RouteBox,
   boxes: Map<string, RouteBox>,
   edgeMargin: number
-): number {
+): number[] {
   const minY = Math.min(source.cy, target.cy);
   const maxY = Math.max(source.cy, target.cy);
-  let track = preferred;
+  const candidates = [preferred];
 
   for (const box of boxes.values()) {
     if (box.id === source.id || box.id === target.id) continue;
     const overlapsY =
       box.top - edgeMargin <= maxY && box.bottom + edgeMargin >= minY;
     const hitsX =
-      track >= box.left - edgeMargin && track <= box.right + edgeMargin;
+      preferred >= box.left - edgeMargin && preferred <= box.right + edgeMargin;
     if (overlapsY && hitsX) {
-      track =
-        preferred < box.cx ? box.left - edgeMargin : box.right + edgeMargin;
+      candidates.push(box.left - edgeMargin, box.right + edgeMargin);
     }
   }
 
-  return track;
+  const bounds = routeBounds(boxes, edgeMargin);
+  candidates.push(bounds.left, bounds.right);
+
+  return sortTracksByPreference(candidates, preferred);
 }
 
-function clearHorizontalTrack(
+function clearHorizontalTrackCandidates(
   preferred: number,
   source: RouteBox,
   target: RouteBox,
   boxes: Map<string, RouteBox>,
   edgeMargin: number
-): number {
+): number[] {
   const minX = Math.min(source.cx, target.cx);
   const maxX = Math.max(source.cx, target.cx);
-  let track = preferred;
+  const candidates = [preferred];
 
   for (const box of boxes.values()) {
     if (box.id === source.id || box.id === target.id) continue;
     const overlapsX =
       box.left - edgeMargin <= maxX && box.right + edgeMargin >= minX;
     const hitsY =
-      track >= box.top - edgeMargin && track <= box.bottom + edgeMargin;
+      preferred >= box.top - edgeMargin && preferred <= box.bottom + edgeMargin;
     if (overlapsX && hitsY) {
-      track =
-        preferred < box.cy ? box.top - edgeMargin : box.bottom + edgeMargin;
+      candidates.push(box.top - edgeMargin, box.bottom + edgeMargin);
     }
   }
 
-  return track;
+  const bounds = routeBounds(boxes, edgeMargin);
+  candidates.push(bounds.top, bounds.bottom);
+
+  return sortTracksByPreference(candidates, preferred);
+}
+
+function buildHorizontalDetour(
+  start: Point,
+  end: Point,
+  startDirection: number,
+  endDirection: number,
+  track: number,
+  edgeMargin: number
+): Point[] {
+  const startOutsideX = start.x + startDirection * edgeMargin;
+  const endOutsideX = end.x + endDirection * edgeMargin;
+
+  return [
+    start,
+    { x: startOutsideX, y: start.y },
+    { x: startOutsideX, y: track },
+    { x: endOutsideX, y: track },
+    { x: endOutsideX, y: end.y },
+    end,
+  ];
+}
+
+function buildVerticalDetour(
+  start: Point,
+  end: Point,
+  startDirection: number,
+  endDirection: number,
+  track: number,
+  edgeMargin: number
+): Point[] {
+  const startOutsideY = start.y + startDirection * edgeMargin;
+  const endOutsideY = end.y + endDirection * edgeMargin;
+
+  return [
+    start,
+    { x: start.x, y: startOutsideY },
+    { x: track, y: startOutsideY },
+    { x: track, y: endOutsideY },
+    { x: end.x, y: endOutsideY },
+    end,
+  ];
+}
+
+function isPathClear(
+  path: Point[],
+  source: RouteBox,
+  target: RouteBox,
+  boxes: Map<string, RouteBox>,
+  edgeMargin: number
+): boolean {
+  return countPathCollisions(path, source, target, boxes, edgeMargin) === 0;
+}
+
+function countPathCollisions(
+  path: Point[],
+  source: RouteBox,
+  target: RouteBox,
+  boxes: Map<string, RouteBox>,
+  edgeMargin: number
+): number {
+  let collisions = 0;
+
+  for (let index = 0; index < path.length - 1; index++) {
+    const from = path[index];
+    const to = path[index + 1];
+    for (const box of boxes.values()) {
+      if (box.id === source.id || box.id === target.id) continue;
+      if (segmentIntersectsBox(from, to, box, edgeMargin)) collisions++;
+    }
+  }
+
+  return collisions;
+}
+
+function segmentIntersectsBox(
+  from: Point,
+  to: Point,
+  box: RouteBox,
+  edgeMargin: number
+): boolean {
+  const left = box.left - edgeMargin;
+  const right = box.right + edgeMargin;
+  const top = box.top - edgeMargin;
+  const bottom = box.bottom + edgeMargin;
+
+  if (from.x === to.x) {
+    const lo = Math.min(from.y, to.y);
+    const hi = Math.max(from.y, to.y);
+    return from.x >= left && from.x <= right && hi >= top && lo <= bottom;
+  }
+
+  if (from.y === to.y) {
+    const lo = Math.min(from.x, to.x);
+    const hi = Math.max(from.x, to.x);
+    return from.y >= top && from.y <= bottom && hi >= left && lo <= right;
+  }
+
+  return false;
+}
+
+function shortestPathByCollisions(
+  paths: Point[][],
+  source: RouteBox,
+  target: RouteBox,
+  boxes: Map<string, RouteBox>,
+  edgeMargin: number
+): Point[] {
+  return [...paths].sort((left, right) => {
+    const leftCollisions = countPathCollisions(
+      left,
+      source,
+      target,
+      boxes,
+      edgeMargin
+    );
+    const rightCollisions = countPathCollisions(
+      right,
+      source,
+      target,
+      boxes,
+      edgeMargin
+    );
+    if (leftCollisions !== rightCollisions) {
+      return leftCollisions - rightCollisions;
+    }
+
+    return pathLength(left) - pathLength(right);
+  })[0];
+}
+
+function pathLength(path: Point[]): number {
+  let length = 0;
+  for (let index = 0; index < path.length - 1; index++) {
+    length +=
+      Math.abs(path[index].x - path[index + 1].x) +
+      Math.abs(path[index].y - path[index + 1].y);
+  }
+  return length;
+}
+
+function routeBounds(
+  boxes: Map<string, RouteBox>,
+  edgeMargin: number
+): { left: number; right: number; top: number; bottom: number } {
+  let left = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+
+  for (const box of boxes.values()) {
+    left = Math.min(left, box.left);
+    right = Math.max(right, box.right);
+    top = Math.min(top, box.top);
+    bottom = Math.max(bottom, box.bottom);
+  }
+
+  return {
+    left: Math.max(edgeMargin, left - edgeMargin),
+    right: right + edgeMargin,
+    top: Math.max(edgeMargin, top - edgeMargin),
+    bottom: bottom + edgeMargin,
+  };
+}
+
+function sortTracksByPreference(values: number[], preferred: number): number[] {
+  return Array.from(new Set(values.map(snap))).sort((left, right) => {
+    const distance = Math.abs(left - preferred) - Math.abs(right - preferred);
+    return distance === 0 ? left - right : distance;
+  });
+}
+
+function trackOffsets(startCount: number, minimumGap: number): number[] {
+  const offsets: number[] = [];
+  for (let index = 0; index < 10; index++) {
+    const count = startCount + index;
+    if (count === 0) {
+      offsets.push(0);
+      continue;
+    }
+
+    const direction = count % 2 === 0 ? -1 : 1;
+    offsets.push(direction * Math.ceil(count / 2) * minimumGap);
+  }
+  return offsets;
 }
 
 function leftPort(box: RouteBox): Point {

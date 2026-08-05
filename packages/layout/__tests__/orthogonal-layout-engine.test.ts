@@ -10,6 +10,37 @@ function expectManhattan(points: Array<{ x: number; y: number }>) {
   }
 }
 
+function expectPathAvoidsNode(
+  points: Array<{ x: number; y: number }>,
+  node: { x: number; y: number; width: number; height: number },
+  margin = 0
+) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const from = points[i];
+    const to = points[i + 1];
+    const left = node.x - margin;
+    const right = node.x + node.width + margin;
+    const top = node.y - margin;
+    const bottom = node.y + node.height + margin;
+
+    if (from.x === to.x) {
+      const lo = Math.min(from.y, to.y);
+      const hi = Math.max(from.y, to.y);
+      expect(
+        from.x >= left && from.x <= right && hi >= top && lo <= bottom
+      ).toBe(false);
+    }
+
+    if (from.y === to.y) {
+      const lo = Math.min(from.x, to.x);
+      const hi = Math.max(from.x, to.x);
+      expect(
+        from.y >= top && from.y <= bottom && hi >= left && lo <= right
+      ).toBe(false);
+    }
+  }
+}
+
 describe('OrthogonalLayoutEngine', () => {
   it('returns empty bounds for an empty graph', () => {
     const engine = new OrthogonalLayoutEngine();
@@ -82,6 +113,28 @@ describe('OrthogonalLayoutEngine', () => {
         expect(point.y % 10).toBe(0);
       }
     }
+  });
+
+  it('reroutes same-row edges around intervening blocks', () => {
+    const engine = new OrthogonalLayoutEngine({
+      edgeMargin: 28,
+      nodesep: 120,
+      ranksep: 120,
+    });
+    engine.addNode('a-source', { width: 100, height: 80 });
+    engine.addNode('b-shared-infrastructure', { width: 100, height: 80 });
+    engine.addNode('c-target', { width: 100, height: 80 });
+    engine.addNode('d-peer', { width: 100, height: 80 });
+    engine.addEdge('a-source', 'c-target', { id: 'source-to-target' });
+    engine.addEdge('b-shared-infrastructure', 'd-peer', {
+      id: 'shared-to-peer',
+    });
+
+    const result = engine.layout();
+    const path = result.edges['source-to-target'].points;
+
+    expectManhattan(path);
+    expectPathAvoidsNode(path, result.nodes['b-shared-infrastructure'], 28);
   });
 
   it('ignores edges with missing endpoints without impacting valid edges', () => {
