@@ -3,6 +3,10 @@ import { type ElkNode, type ElkEdge } from '@mindfiredigital/adac-layout-elk';
 import {
   CustomLayoutEngine,
   OrthogonalLayoutEngine,
+  Graph as FlowRankGraph,
+  detectCycles as detectFlowRankCycles,
+  breakCycles as breakFlowRankCycles,
+  assignRanks as assignFlowRanks,
 } from '@mindfiredigital/adac-layout-core';
 import { routeAStar } from './routing';
 
@@ -1147,6 +1151,14 @@ function countOrthogonalRouteCollisions(
   return collisions;
 }
 
+// Minimum clearance a routed edge must keep from a container's title-pill
+// label. Shared by the port-stub computation (which decides where an edge
+// leaves/enters a container that has a pill) and the repair pass below (which
+// nudges an edge sideways if it still ends up too close) so the two agree on
+// what "clear" means instead of the stub landing exactly on the boundary the
+// repair pass treats as a collision.
+const ORTHOGONAL_TITLE_PILL_CLEARANCE = 8;
+
 function repairOrthogonalTitlePillCollisions(
   points: { x: number; y: number }[],
   titlePills: { x: number; y: number; w: number; h: number }[],
@@ -1158,7 +1170,7 @@ function repairOrthogonalTitlePillCollisions(
 ) {
   let repaired = simplifyOrthogonalPoints(points);
   const gateClearance = 64;
-  const pillClearance = 8;
+  const pillClearance = ORTHOGONAL_TITLE_PILL_CLEARANCE;
 
   for (let pass = 0; pass < 3; pass++) {
     let changed = false;
@@ -2162,13 +2174,25 @@ function compactOrthogonalSiblingColumns(
   const xShifts = new Map<ElkNode, number>();
 
   for (const column of orderedColumns) {
-    const shift = Math.min(0, nextMinX - column.minX);
+    // Not clamped to <= 0: a column whose x-range is nested inside an
+    // earlier, wider column (e.g. a narrower same-rank node that
+    // coordinate-assignment centered well to the right of a wide sibling,
+    // landing it at a smaller rounded-x "column" than a later rank) must
+    // still be pushed right of that wider column's true edge, not just
+    // pulled closer when there's slack. Clamping to <= 0 here left such
+    // columns exactly where they started, which could be inside — not just
+    // near — the wider column, producing a visible box overlap.
+    const shift = nextMinX - column.minX;
     for (const node of column.nodes) {
       xShifts.set(node, shift);
     }
 
     const shiftedMaxX = column.maxX + shift;
-    nextMinX = shiftedMaxX + columnGap;
+    // Track the rightmost edge established so far, not just the previous
+    // column's: an intermediate column that's narrower than an earlier one
+    // must not reset the floor lower than what that earlier column already
+    // required.
+    nextMinX = Math.max(nextMinX, shiftedMaxX + columnGap);
   }
 
   return children.map((child) => ({
@@ -2234,6 +2258,99 @@ export async function renderSvg(
     };
     collectAllEdges(graph);
 
+    // Map every node id to its immediate parent id in the original
+    // (pre-layout) tree. Used below to "lift" a real connection between two
+    // deeply nested nodes up to whichever direct siblings actually contain
+    // them — e.g. `secrets-manager -> ecs-fargate` (ecs-fargate nested three
+    // levels inside `vpc-main`) becomes a hint that `secrets-manager` should
+    // rank just before `vpc-main` at the level where they're both direct
+    // siblings, instead of that relationship only being visible deep inside
+    // `vpc-main` where `secrets-manager` never appears at all.
+    const parentOf = new Map<string, string>();
+    if (isOrthogonalLayout) {
+      const recordParents = (n: ElkNode) => {
+        n.children?.forEach((c) => {
+          parentOf.set(c.id, n.id);
+          recordParents(c);
+        });
+      };
+      recordParents(graph);
+    }
+
+    // Walk up from `id` until hitting a member of `siblingIds` (or run out
+    // of ancestors). Returns that member, or undefined if `id` isn't nested
+    // under any of them.
+    const findSiblingAncestor = (
+      id: string,
+      siblingIds: Set<string>
+    ): string | undefined => {
+      let cur: string | undefined = id;
+      const visited = new Set<string>();
+      while (cur !== undefined && !visited.has(cur)) {
+        if (siblingIds.has(cur)) return cur;
+        visited.add(cur);
+        cur = parentOf.get(cur);
+      }
+      return undefined;
+    };
+
+    // For `orthogonal`, precompute a global flow-rank per node id (leaves AND
+    // containers) from the full connection graph, ignoring nesting. When
+    // siblings have no direct edge between them the masonry fallback below
+    // has no way to know which one is the "entry" side and which is
+    // "downstream" — without this it just packs them in declaration order,
+    // which is why an entry point like a user/client node could land on the
+    // wrong side of the diagram relative to everything it flows into. Custom
+    // and elk are unaffected: this map is only consulted when
+    // isOrthogonalLayout is true.
+    const globalFlowRank = new Map<string, number>();
+    if (isOrthogonalLayout) {
+      const rankGraph = new FlowRankGraph();
+      const collectIds = (n: ElkNode) => {
+        rankGraph.addNode(n.id, { width: 1, height: 1 });
+        n.children?.forEach(collectIds);
+      };
+      collectIds(graph);
+      // Synthetic parent->child edges: a container's rank must be a real
+      // upper bound on anything nested inside it. Without this, a "runs"
+      // sub-app that happens to have no incoming connection of its own
+      // (e.g. an app hosted by a service that receives traffic, but the
+      // connection targets the service, not the app id) gets treated as a
+      // rank-0 entry point by the earliest-pass below, which then drags its
+      // entire container down to rank 0 too — even though the container
+      // clearly sits downstream of other things.
+      const addNestingEdges = (n: ElkNode) => {
+        n.children?.forEach((c) => {
+          rankGraph.addEdge(n.id, c.id);
+          addNestingEdges(c);
+        });
+      };
+      addNestingEdges(graph);
+      for (const edge of allOriginalEdges) {
+        const src = edge.sources?.[0];
+        const tgt = edge.targets?.[0];
+        if (
+          src &&
+          tgt &&
+          src !== tgt &&
+          rankGraph.getNode(src) &&
+          rankGraph.getNode(tgt)
+        ) {
+          rankGraph.addEdge(src, tgt);
+        }
+      }
+      const rankCycles = detectFlowRankCycles(rankGraph);
+      if (rankCycles.length > 0) breakFlowRankCycles(rankGraph, rankCycles);
+      assignFlowRanks(rankGraph);
+      rankGraph.nodes.forEach((n, id) => globalFlowRank.set(id, n.rank));
+    }
+
+    // Bottom-up "effective" flow-rank: a leaf's is its own global rank; a
+    // container's is the minimum rank among whatever is inside it, so a
+    // container packs at the same relative position as its most upstream
+    // child. Populated by layoutNode() as it recurses.
+    const effectiveFlowRank = new Map<string, number>();
+
     /**
      * Recursively lay out a node's children.
      * Uses the core engine when there are edges between children
@@ -2243,6 +2360,12 @@ export async function renderSvg(
     const layoutNode = async (node: ElkNode): Promise<ElkNode> => {
       // Leaf node: return as-is
       if (!node.children || node.children.length === 0) {
+        if (isOrthogonalLayout) {
+          effectiveFlowRank.set(
+            node.id,
+            globalFlowRank.get(node.id) ?? Infinity
+          );
+        }
         return {
           ...node,
           width: node.width || 96,
@@ -2258,10 +2381,34 @@ export async function renderSvg(
         laidOutChildren.push(await layoutNode(child));
       }
 
-      // Check if there are any local edges between direct children
+      if (isOrthogonalLayout) {
+        let minRank = Infinity;
+        for (const child of laidOutChildren) {
+          const r = effectiveFlowRank.get(child.id) ?? Infinity;
+          if (r < minRank) minRank = r;
+        }
+        effectiveFlowRank.set(node.id, minRank);
+      }
+
+      // Check if there are any local edges between direct children.
+      //
+      // `node.edges` is only ever populated on the graph ROOT (buildElkGraph
+      // attaches the full flat connection list there and nowhere else), so
+      // for every non-root container this was always empty — the local-edge
+      // rank-based layout branch below was effectively unreachable except at
+      // the root. For `orthogonal`, fall back to scanning the pre-collected
+      // `allOriginalEdges` (gathered from every level up front) so nested
+      // containers with real local connections are actually detected.
+      // `custom`'s behavior is intentionally left exactly as before.
       const childIds = new Set(laidOutChildren.map((c) => c.id));
       const localEdges: ElkEdge[] = [];
-      if (node.edges) {
+      if (isOrthogonalLayout) {
+        for (const edge of allOriginalEdges) {
+          if (childIds.has(edge.sources[0]) && childIds.has(edge.targets[0])) {
+            localEdges.push(edge);
+          }
+        }
+      } else if (node.edges) {
         for (const edge of node.edges) {
           if (childIds.has(edge.sources[0]) && childIds.has(edge.targets[0])) {
             localEdges.push(edge);
@@ -2280,8 +2427,12 @@ export async function renderSvg(
         (isOrthogonalLayout ||
           (laidOutChildren.length <= 12 && !hasStructuralChildren))
       ) {
+        // The orthogonal engine flows left-to-right (matching the `elk`
+        // engine's `elk.direction: RIGHT`, and typical AWS architecture
+        // diagram conventions). `custom` keeps its original top-to-bottom
+        // behavior unchanged.
         const engineOptions = {
-          rankdir: 'TB',
+          rankdir: isOrthogonalLayout ? 'LR' : 'TB',
           nodesep: NODE_GAP_X,
           ranksep: NODE_GAP_Y,
         } as const;
@@ -2296,8 +2447,32 @@ export async function renderSvg(
             height: child.height || 116,
           });
         }
-        for (const edge of localEdges) {
-          engine.addEdge(edge.sources[0], edge.targets[0]);
+        if (isOrthogonalLayout) {
+          // Lift every real connection to the pair of direct siblings that
+          // actually contain its two endpoints, not just the ones whose
+          // endpoints happen to be direct siblings themselves (that literal
+          // subset is `localEdges`, and it's often only one or two edges —
+          // e.g. a container with one connected pair plus several unrelated
+          // siblings, where each of those siblings' real relationships live
+          // several levels deeper and were invisible at this level before).
+          // A pair can be lifted to the same edge multiple times (e.g. every
+          // connection into a busy container); duplicates are harmless,
+          // they just repeat the same ordering constraint.
+          const childIds = new Set(laidOutChildren.map((c) => c.id));
+          for (const edge of allOriginalEdges) {
+            const src = edge.sources?.[0];
+            const tgt = edge.targets?.[0];
+            if (!src || !tgt) continue;
+            const from = findSiblingAncestor(src, childIds);
+            const to = findSiblingAncestor(tgt, childIds);
+            if (from && to && from !== to) {
+              engine.addEdge(from, to);
+            }
+          }
+        } else {
+          for (const edge of localEdges) {
+            engine.addEdge(edge.sources[0], edge.targets[0]);
+          }
         }
 
         const result = await engine.layout();
@@ -2324,6 +2499,16 @@ export async function renderSvg(
         const isAz = (c: ElkNode) => hasCssClassToken(c, ZONE_CLASS_TOKENS);
         const azChildren = laidOutChildren.filter((c) => isAz(c));
         const nonAzChildren = laidOutChildren.filter((c) => !isAz(c));
+        if (isOrthogonalLayout) {
+          // No local edges to derive an order from here, so fall back to the
+          // precomputed global flow-rank — a stable sort keeps ties in their
+          // original (declaration) order.
+          nonAzChildren.sort(
+            (a, b) =>
+              (effectiveFlowRank.get(a.id) ?? Infinity) -
+              (effectiveFlowRank.get(b.id) ?? Infinity)
+          );
+        }
 
         let currentX = 0;
         const columns: { x: number; w: number; y: number }[] = [];
@@ -2346,10 +2531,24 @@ export async function renderSvg(
               maxChildWidth = c.width;
             }
           }
-          const numCols = Math.min(
-            Math.ceil(Math.sqrt(nonAzChildren.length)),
-            4
+          // Orthogonal favors a single vertical column over a square-ish
+          // grid for small lists of leaves (e.g. API Service 1/2/3): it
+          // reads as a clean stacked list and avoids widening the container
+          // just to fit a second/third column. Restricted to small,
+          // same-kind lists — a single column of a dozen-plus items turns
+          // into an unreasonably tall tower, and mixing in an actual
+          // container (which can be far larger than a leaf, e.g. a
+          // catch-all wrapper sitting next to a lone entry-point node)
+          // forces that tiny node into the same cramped column with no
+          // room to be positioned sensibly. Both cases fall back to the
+          // grid custom uses.
+          const allLeaves = nonAzChildren.every(
+            (c) => !c.children || c.children.length === 0
           );
+          const numCols =
+            isOrthogonalLayout && allLeaves && nonAzChildren.length <= 4
+              ? 1
+              : Math.min(Math.ceil(Math.sqrt(nonAzChildren.length)), 4);
           for (let i = 0; i < numCols; i++) {
             const colObj = {
               x: i * (maxChildWidth + NODE_GAP_X),
@@ -2361,6 +2560,11 @@ export async function renderSvg(
         }
 
         const positionedNonAz: ElkNode[] = [];
+        // Keyed by node id (not object reference): compaction below returns
+        // fresh copies of each node, so an identity-keyed map would no
+        // longer resolve after that step, and centering has to happen
+        // after compaction anyway — see the comment there.
+        const colAssignment = new Map<string, number>();
         nonAzChildren.forEach((c) => {
           let minCol = columns[0] || { x: 0, w: 0, y: CONTAINER_TOP };
           for (const col of columns) {
@@ -2372,6 +2576,7 @@ export async function renderSvg(
             x: minCol.x + CONTAINER_PAD,
             y: minCol.y,
           });
+          colAssignment.set(c.id, minCol.x);
 
           minCol.y += (c.height || 0) + NODE_GAP_Y;
         });
@@ -2383,6 +2588,118 @@ export async function renderSvg(
             positionedChildren,
             80
           );
+
+          // Center each item within the width its column actually ends up
+          // using (the widest sibling that landed there), not the column's
+          // seed width (>= 400, used only for spacing multi-column grids)
+          // — centering against that notional width left a lopsided gap
+          // once the container shrank to fit the real (narrower) content,
+          // since container sizing only ever looks at where children
+          // actually are, not how wide their column was reserved to be.
+          // Done *after* compaction above: compaction groups siblings by
+          // rounded x to detect columns, and centering individual children
+          // by different amounts before that would give same-column
+          // siblings different x values, making compaction see several
+          // single-node "columns" instead of one and scattering them apart.
+          const trueColWidth = new Map<number, number>();
+          positionedChildren.forEach((child) => {
+            const colX = colAssignment.get(child.id);
+            if (colX === undefined) return;
+            trueColWidth.set(
+              colX,
+              Math.max(trueColWidth.get(colX) || 0, child.width || 0)
+            );
+          });
+          positionedChildren = positionedChildren.map((child) => {
+            const colX = colAssignment.get(child.id);
+            if (colX === undefined) return child;
+            const width = trueColWidth.get(colX) || 0;
+            const offset = Math.max(0, (width - (child.width || 0)) / 2);
+            return { ...child, x: (child.x || 0) + offset };
+          });
+
+          // Re-center an isolated satellite leaf (e.g. an entry point like
+          // Users) against whichever sibling it actually connects to via a
+          // lifted real edge, instead of leaving it pinned wherever the
+          // grid packer's fill order happened to put it (typically the
+          // very top). Left alone, that produces a long, straight edge
+          // running the full height of the diagram to reach a target
+          // that's really positioned mid-way down — height with no
+          // structural meaning. Scoped to the diagram's outermost level
+          // only: that's specifically where an unreferenced entry/exit
+          // node ends up as a raw sibling of one large wrapper container
+          // (the scenario this targets), and staying out of nested
+          // containers avoids cascading repositioning through diagrams
+          // with many independent satellites at deeper levels, which was
+          // producing convoluted edge routing.
+          if (node.id === 'root') {
+            const siblingIds = new Set(positionedChildren.map((c) => c.id));
+            const byId = new Map(positionedChildren.map((c) => [c.id, c]));
+            for (const child of positionedChildren) {
+              if (child.children && child.children.length > 0) continue;
+              let partnerId: string | undefined;
+              let singlePartner = true;
+              for (const edge of allOriginalEdges) {
+                const src = edge.sources?.[0];
+                const tgt = edge.targets?.[0];
+                if (!src || !tgt) continue;
+                const otherEnd =
+                  src === child.id ? tgt : tgt === child.id ? src : undefined;
+                if (!otherEnd) continue;
+                const lifted = findSiblingAncestor(otherEnd, siblingIds);
+                if (!lifted || lifted === child.id) continue;
+                if (partnerId === undefined) partnerId = lifted;
+                else if (partnerId !== lifted) {
+                  singlePartner = false;
+                  break;
+                }
+              }
+              if (!partnerId || !singlePartner) continue;
+              const partner = byId.get(partnerId);
+              if (!partner) continue;
+              const partnerCenterY =
+                (partner.y || 0) + (partner.height || 0) / 2;
+              const desiredY = Math.max(
+                CONTAINER_TOP,
+                partnerCenterY - (child.height || 0) / 2
+              );
+              // Only move it into a spot that's actually clear — two
+              // independently-positioned satellites (e.g. an entry point and
+              // an unrelated secrets/monitoring node) can otherwise both want
+              // roughly the same row and end up stacked on top of each other.
+              // If the exact center is taken, walk outward in both directions
+              // for the nearest clear row rather than giving up outright and
+              // falling back to the original (usually far worse) position.
+              const cx = child.x || 0;
+              const cw = child.width || 0;
+              const ch = child.height || 0;
+              const overlapsAt = (y: number) =>
+                positionedChildren.some((other) => {
+                  if (other === child) return false;
+                  const ox = other.x || 0;
+                  const oy = other.y || 0;
+                  const ow = other.width || 0;
+                  const oh = other.height || 0;
+                  return (
+                    cx < ox + ow && cx + cw > ox && y < oy + oh && y + ch > oy
+                  );
+                });
+              let bestY: number | undefined;
+              for (let step = 0; step <= 6 && bestY === undefined; step++) {
+                const offset = step * (NODE_GAP_Y + ch);
+                for (const y of step === 0
+                  ? [desiredY]
+                  : [desiredY - offset, desiredY + offset]) {
+                  const clamped = Math.max(CONTAINER_TOP, y);
+                  if (!overlapsAt(clamped)) {
+                    bestY = clamped;
+                    break;
+                  }
+                }
+              }
+              if (bestY !== undefined) child.y = bestY;
+            }
+          }
         }
       }
 
@@ -2397,10 +2714,22 @@ export async function renderSvg(
       const labelText = node.labels?.[0]?.text || '';
       // Heuristic: ~8px per character + 80px padding for the pill structure
       const minLabelWidth = labelText.length * 8 + 80;
+      const contentWidth = maxX + CONTAINER_PAD;
 
+      // When a long title pill forces the container wider than its content
+      // actually needs (e.g. "ECS Fargate Workers Cluster" next to a couple
+      // of narrow stacked leaves), re-center the whole content block in the
+      // extra space instead of leaving it pinned to the left edge under a
+      // pill that overhangs empty space on the right.
+      if (isOrthogonalLayout && minLabelWidth > contentWidth) {
+        const shift = (minLabelWidth - contentWidth) / 2;
+        positionedChildren.forEach((child) => {
+          child.x = (child.x || 0) + shift;
+        });
+      }
       return {
         ...node,
-        width: Math.max(maxX + CONTAINER_PAD, minLabelWidth),
+        width: Math.max(contentWidth, minLabelWidth),
         height: maxY + CONTAINER_PAD,
         children: positionedChildren,
         edges: [],
@@ -4024,7 +4353,19 @@ export async function renderSvg(
   const renderLegend = () => {
     const LEGEND_W = 160;
     const LEGEND_H = 80;
-    // Legend bounds check: push left if there's a container collision
+    // Legend bounds check: push left if there's a container collision.
+    // For orthogonal, only leaf node cards count as a collision — container
+    // backgrounds are a pale translucent wash (see `.aws-container { fill:
+    // none }` plus a light per-type tint), not solid content, so the legend
+    // sitting on top of one is harmless. Treating them as obstacles was
+    // pushing the legend away from its default bottom-right corner (which
+    // sits inside the outermost wrapper container that spans nearly the
+    // whole canvas) all the way up next to whatever small node happens to
+    // be at the top — usually the diagram's own entry point. custom/elk
+    // keep the original behavior.
+    const legendObstacles = isOrthogonalLayout
+      ? allNodeBoxes.filter((box) => !box.isContainer)
+      : allNodeBoxes;
     let LX = width - LEGEND_W - 20;
     let LY = height - LEGEND_H - 20;
     const legendOverlaps = (box: (typeof allNodeBoxes)[number]) =>
@@ -4033,7 +4374,7 @@ export async function renderSvg(
       LX < box.right &&
       LX + LEGEND_W > box.x;
 
-    for (const box of allNodeBoxes) {
+    for (const box of legendObstacles) {
       if (legendOverlaps(box)) {
         LX = box.x - LEGEND_W - 20; // push outside container
       }
@@ -4041,28 +4382,44 @@ export async function renderSvg(
     // Clamp legend to visible area — never render at negative coords
     if (LX < 20) LX = 20;
     // If clamped position still overlaps, try above the blocking box, then top-left.
-    const blockingBox = allNodeBoxes.find((box) => legendOverlaps(box));
+    const blockingBox = legendObstacles.find((box) => legendOverlaps(box));
     if (blockingBox) {
       LY = Math.max(20, blockingBox.y - LEGEND_H - 20);
-      if (allNodeBoxes.some((box) => legendOverlaps(box))) {
+      if (legendObstacles.some((box) => legendOverlaps(box))) {
         LY = 20;
       }
     }
     const maxLegendY = Math.max(20, height - LEGEND_H - 20);
-    const candidatePositions = [
-      { x: LX, y: LY },
-      { x: 20, y: LY },
-      { x: width - LEGEND_W - 20, y: 20 },
-      { x: 20, y: 20 },
-    ];
-    for (let y = 20; y <= maxLegendY; y += 20) {
-      candidatePositions.push({ x: 20, y });
-      candidatePositions.push({ x: width - LEGEND_W - 20, y });
+    const candidatePositions = isOrthogonalLayout
+      ? // Prefer bottom-left outright, then scan upward only as far as
+        // needed to clear a leaf node — the opposite order from custom/elk
+        // below, which scan from the top and so tend to settle near the
+        // diagram's entry point instead of the bottom corner.
+        [
+          { x: 20, y: maxLegendY },
+          { x: LX, y: LY },
+        ]
+      : [
+          { x: LX, y: LY },
+          { x: 20, y: LY },
+          { x: width - LEGEND_W - 20, y: 20 },
+          { x: 20, y: 20 },
+        ];
+    if (isOrthogonalLayout) {
+      for (let y = maxLegendY; y >= 20; y -= 20) {
+        candidatePositions.push({ x: 20, y });
+        candidatePositions.push({ x: width - LEGEND_W - 20, y });
+      }
+    } else {
+      for (let y = 20; y <= maxLegendY; y += 20) {
+        candidatePositions.push({ x: 20, y });
+        candidatePositions.push({ x: width - LEGEND_W - 20, y });
+      }
     }
     const clearPosition = candidatePositions.find((candidate) => {
       LX = Math.max(20, Math.min(candidate.x, width - LEGEND_W - 20));
       LY = Math.max(20, Math.min(candidate.y, maxLegendY));
-      return !allNodeBoxes.some((box) => legendOverlaps(box));
+      return !legendObstacles.some((box) => legendOverlaps(box));
     });
     if (clearPosition) {
       LX = Math.max(20, Math.min(clearPosition.x, width - LEGEND_W - 20));

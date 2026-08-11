@@ -95,6 +95,65 @@ describe('OrthogonalLayoutEngine', () => {
     );
   });
 
+  it('snaps every node position to the 10-unit routing grid', () => {
+    const engine = new OrthogonalLayoutEngine({ nodesep: 100, ranksep: 100 });
+    for (const id of ['api', 'db', 'queue', 'worker']) {
+      engine.addNode(id, { width: 100, height: 80 });
+    }
+    engine.addEdge('api', 'db');
+    engine.addEdge('api', 'queue');
+    engine.addEdge('worker', 'queue');
+
+    const result = engine.layout();
+
+    for (const node of Object.values(result.nodes)) {
+      expect(node.x % 10).toBe(0);
+      expect(node.y % 10).toBe(0);
+    }
+  });
+
+  it('keeps median alignment consistent across a 4-rank fan-in/fan-out chain', () => {
+    const create = () => {
+      const engine = new OrthogonalLayoutEngine({
+        nodesep: 100,
+        ranksep: 100,
+      });
+      for (const id of ['a', 'b1', 'b2', 'c1', 'c2', 'd']) {
+        engine.addNode(id, { width: 100, height: 80 });
+      }
+      engine.addEdge('a', 'b1');
+      engine.addEdge('a', 'b2');
+      engine.addEdge('b1', 'c1');
+      engine.addEdge('b2', 'c1');
+      engine.addEdge('b2', 'c2');
+      engine.addEdge('c1', 'd');
+      engine.addEdge('c2', 'd');
+      return engine.layout();
+    };
+
+    const first = create();
+    const second = create();
+
+    expect(first).toEqual(second);
+    // 'd' is alone on its rank with two parents (c1, c2), so nothing else
+    // constrains its position: it must land exactly on their mean x. This
+    // only holds if every rank's alignment sweep sees the *final* position
+    // of the rank before it, four ranks deep — not a stale mid-sweep value.
+    expect(first.nodes.d.x).toBe((first.nodes.c1.x + first.nodes.c2.x) / 2);
+  });
+
+  it('lays out nodes left-to-right when rankdir is LR', () => {
+    const engine = new OrthogonalLayoutEngine({ rankdir: 'LR' });
+    engine.addNode('api', { width: 100, height: 80 });
+    engine.addNode('db', { width: 100, height: 80 });
+    engine.addEdge('api', 'db', { id: 'api-to-db' });
+
+    const result = engine.layout();
+
+    expect(result.nodes.db.x).toBeGreaterThan(result.nodes.api.x);
+    expectManhattan(result.edges['api-to-db'].points);
+  });
+
   it('routes every edge as a strict orthogonal polyline', () => {
     const engine = new OrthogonalLayoutEngine();
     engine.addNode('api', { width: 100, height: 80 });

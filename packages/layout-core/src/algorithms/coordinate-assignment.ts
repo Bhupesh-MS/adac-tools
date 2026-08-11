@@ -97,6 +97,23 @@ export function assignCoordinates(
     }
   }
 
+  // Alternating sweeps can leave the last-touched rank one step "ahead" of
+  // its neighbor when MAX_ALIGNMENT_SWEEPS ends on a backward pass (each
+  // sweep cascades left-to-right or right-to-left off values the other
+  // direction hasn't seen yet). Finish with one canonical top-down pass so
+  // every rank reflects its predecessor's final position instead of a
+  // stale mid-sweep value.
+  for (let ri = 1; ri < sortedRanks.length; ri++) {
+    alignToNeighbors(
+      graph,
+      ordering,
+      sortedRanks[ri],
+      'incoming',
+      isHorizontal,
+      options
+    );
+  }
+
   // ── Pass 4: Compaction — center narrow ranks within the global span ──
   let globalMax = 0;
   sortedRanks.forEach((rank) => {

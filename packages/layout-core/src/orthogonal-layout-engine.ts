@@ -6,6 +6,11 @@ import type {
   NodeData,
   NodePosition,
 } from './types';
+import { Graph } from './graph/graph';
+import { detectCycles, breakCycles } from './algorithms/cycle-detection';
+import { assignRanks, normalize } from './algorithms/rank-assignment';
+import { orderNodes } from './algorithms/node-ordering';
+import { assignCoordinates } from './algorithms/coordinate-assignment';
 
 type Point = { x: number; y: number };
 
@@ -33,11 +38,6 @@ type RouteBox = {
   cy: number;
 };
 
-type PlanarizationResult = {
-  orderedNodes: StoredNode[];
-  orderedEdges: StoredEdge[];
-};
-
 const DEFAULT_NODE_WIDTH = 96;
 const DEFAULT_NODE_HEIGHT = 116;
 const DEFAULT_NODE_SEP = 120;
@@ -50,13 +50,14 @@ const GRID_UNIT = 10;
 /**
  * Opt-in Topology-Shape-Metrics inspired orthogonal layout engine.
  *
- * The implementation keeps the TSM phases explicit:
- * - planarization: deterministic crossing-reduction order for the topology
- * - orthogonalization: global side/track assignment with Manhattan paths
- * - compaction: square-biased grid packing with integer coordinates
- *
- * This avoids changing the existing layered engines while giving architecture
- * diagrams clean, professional orthogonal edges and balanced area usage.
+ * Node placement reuses the same layered-graph pipeline as
+ * `CustomLayoutEngine` (cycle breaking, rank assignment, crossing-minimizing
+ * ordering, Brandes-Koepf-style coordinate assignment) so that `rankdir`
+ * ('LR' or 'TB') produces a real flow-direction layout instead of an
+ * unordered grid. Edge drawing keeps this engine's own orthogonalization
+ * phase: global side/track assignment with Manhattan paths and obstacle
+ * avoidance, which is what gives architecture diagrams clean right-angle
+ * connectors.
  */
 export class OrthogonalLayoutEngine {
   private readonly nodes = new Map<string, StoredNode>();
@@ -84,94 +85,119 @@ export class OrthogonalLayoutEngine {
   }
 
   layout(): LayoutResult {
-    const planar = this.planarize();
-    const nodes = this.compact(planar.orderedNodes);
-    const edges = this.orthogonalize(planar.orderedEdges, nodes);
-    const bounds = calculateBounds(nodes, edges, this.options);
+    const { positions, order } = this.assignPositions();
 
-    return { nodes, edges, bounds };
-  }
-
-  private planarize(): PlanarizationResult {
-    const allNodes = Array.from(this.nodes.values());
+    // Route edges in "least conflicting first" order so later routing can
+    // reserve longer detours for edges that would cross more. Distance is
+    // measured in the final flow order rather than raw declaration order,
+    // so short/local edges are no longer routed after long cross-diagram
+    // ones purely by accident of declaration order.
+    const positionIndex = new Map(order.map((id, index) => [id, index]));
     const knownEdges = this.edges.filter(
       (edge) => this.nodes.has(edge.from) && this.nodes.has(edge.to)
     );
-
-    if (allNodes.length <= 2) {
-      return {
-        orderedNodes: sortByStableKey(allNodes, (node) => node.id),
-        orderedEdges: knownEdges,
-      };
-    }
-
-    const degree = new Map<string, number>();
-    for (const node of allNodes) degree.set(node.id, 0);
-    for (const edge of knownEdges) {
-      degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
-      if (edge.to !== edge.from) {
-        degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
-      }
-    }
-
-    const orderedNodes = sortByStableKey(allNodes, (node) => [
-      -(degree.get(node.id) ?? 0),
-      node.id,
-    ]);
-
-    // A lightweight planarization heuristic: keep lower-conflict edges first so
-    // later routing can reserve longer detours for edges that would cross more.
-    const position = new Map(
-      orderedNodes.map((node, index) => [node.id, index])
-    );
     const orderedEdges = sortByStableKey(knownEdges, (edge) => {
-      const fromIndex = position.get(edge.from) ?? 0;
-      const toIndex = position.get(edge.to) ?? 0;
+      const fromIndex = positionIndex.get(edge.from) ?? 0;
+      const toIndex = positionIndex.get(edge.to) ?? 0;
       return [Math.abs(fromIndex - toIndex), fromIndex, toIndex, edge.id];
     });
 
-    return { orderedNodes, orderedEdges };
+    const edges = this.orthogonalize(orderedEdges, positions);
+    const bounds = calculateBounds(positions, edges, this.options);
+
+    return { nodes: positions, edges, bounds };
   }
 
-  private compact(orderedNodes: StoredNode[]): Record<string, NodePosition> {
-    const result: Record<string, NodePosition> = {};
-    if (orderedNodes.length === 0) return result;
+  /**
+   * Node placement: reuses the layered-graph pipeline (cycle breaking, rank
+   * assignment, crossing-minimizing ordering, coordinate assignment) so
+   * `rankdir` produces a genuine flow-direction layout — the same building
+   * blocks `CustomLayoutEngine` uses — instead of a degree-sorted grid.
+   */
+  private assignPositions(): {
+    positions: Record<string, NodePosition>;
+    order: string[];
+  } {
+    if (this.nodes.size === 0) return { positions: {}, order: [] };
 
-    const marginX = this.options.marginx ?? DEFAULT_MARGIN_X;
-    const marginY = this.options.marginy ?? DEFAULT_MARGIN_Y;
-    const nodeSep = this.options.nodesep ?? DEFAULT_NODE_SEP;
-    const rankSep = this.options.ranksep ?? DEFAULT_RANK_SEP;
-    const isLeftToRight = this.options.rankdir === 'LR';
-    const columns = Math.max(1, Math.ceil(Math.sqrt(orderedNodes.length)));
+    const graph = new Graph();
+    for (const node of this.nodes.values()) {
+      graph.addNode(node.id, { width: node.width, height: node.height });
+    }
+    for (const edge of this.edges) {
+      if (edge.from === edge.to) continue; // self-loops don't affect ranking
+      if (!this.nodes.has(edge.from) || !this.nodes.has(edge.to)) continue;
+      graph.addEdge(edge.from, edge.to);
+    }
 
-    const columnWidths = Array.from({ length: columns }, () => 0);
-    const rowHeights: number[] = [];
+    const options = {
+      rankdir: this.options.rankdir ?? 'TB',
+      nodesep: this.options.nodesep ?? DEFAULT_NODE_SEP,
+      ranksep: this.options.ranksep ?? DEFAULT_RANK_SEP,
+      marginx: this.options.marginx ?? DEFAULT_MARGIN_X,
+      marginy: this.options.marginy ?? DEFAULT_MARGIN_Y,
+      edgeMargin: this.options.edgeMargin ?? DEFAULT_EDGE_MARGIN,
+      edgeRoutingMaxAttempts: this.options.edgeRoutingMaxAttempts ?? 20,
+      logger: this.options.logger ?? { warn: () => {} },
+      maxIterations: this.options.maxIterations ?? 48,
+      nodePlacementStrategy:
+        this.options.nodePlacementStrategy ?? 'BRANDES_KOEPF',
+    };
 
-    orderedNodes.forEach((node, index) => {
-      const col = index % columns;
-      const row = Math.floor(index / columns);
-      columnWidths[col] = Math.max(columnWidths[col], node.width);
-      rowHeights[row] = Math.max(rowHeights[row] ?? 0, node.height);
+    const cycles = detectCycles(graph);
+    if (cycles.length > 0) breakCycles(graph, cycles);
+
+    assignRanks(graph);
+
+    // A node with exactly one real connection (e.g. a KMS key or an IAM
+    // role that only ever feeds into one bucket) is a pure satellite: it
+    // has no other relationships pulling on it, so assignRanks' generic
+    // "balance between earliest and latest possible layer" heuristic can
+    // leave it stranded many ranks away from the one thing it actually
+    // connects to — that's what was producing long, multi-bend detour
+    // edges back to its real target. Pull it flush against that neighbor's
+    // rank instead, same side as the edge direction, before normalize()
+    // turns any remaining gap into a chain of bend-point virtual nodes.
+    graph.nodes.forEach((node) => {
+      const degree = node.incoming.size + node.outgoing.size;
+      if (degree !== 1) return;
+      const isSource = node.outgoing.size === 1;
+      const neighborId = (isSource ? node.outgoing : node.incoming)
+        .values()
+        .next().value;
+      const neighbor = neighborId ? graph.getNode(neighborId) : undefined;
+      if (!neighbor) return;
+      node.rank = isSource ? Math.max(0, neighbor.rank - 1) : neighbor.rank + 1;
     });
 
-    const xOffsets = prefixOffsets(columnWidths, nodeSep, marginX);
-    const yOffsets = prefixOffsets(rowHeights, rankSep, marginY);
+    normalize(graph);
 
-    orderedNodes.forEach((node, index) => {
-      const primary = index % columns;
-      const secondary = Math.floor(index / columns);
-      const x = isLeftToRight ? yOffsets[secondary] : xOffsets[primary];
-      const y = isLeftToRight ? xOffsets[primary] : yOffsets[secondary];
+    const ranks = new Map<string, number>();
+    graph.nodes.forEach((node, id) => ranks.set(id, node.rank));
 
-      result[node.id] = {
-        x: snap(x),
-        y: snap(y),
-        width: node.width,
-        height: node.height,
-      };
-    });
+    const ordering = orderNodes(graph, ranks, options);
+    const rawPositions = assignCoordinates(graph, ranks, ordering, options);
 
-    return result;
+    // Drop virtual (edge-bend) nodes introduced by normalize(); this engine's
+    // own orthogonalize() phase computes real edge geometry separately.
+    // Snap to the same 10-unit grid as edge routing so node box edges land
+    // exactly on the coordinates ports/paths are snapped to.
+    const positions: Record<string, NodePosition> = {};
+    for (const id of this.nodes.keys()) {
+      const raw = rawPositions[id];
+      if (raw) positions[id] = { ...raw, x: snap(raw.x), y: snap(raw.y) };
+    }
+
+    const order: string[] = [];
+    Array.from(ordering.keys())
+      .sort((a, b) => a - b)
+      .forEach((rank) => {
+        (ordering.get(rank) || []).forEach((id) => {
+          if (this.nodes.has(id)) order.push(id);
+        });
+      });
+
+    return { positions, order };
   }
 
   private orthogonalize(
@@ -787,22 +813,6 @@ function calculateBounds(
     width: snap(maxX + marginX),
     height: snap(maxY + marginY),
   };
-}
-
-function prefixOffsets(
-  values: number[],
-  gap: number,
-  margin: number
-): number[] {
-  const offsets: number[] = [];
-  let cursor = margin;
-
-  for (const value of values) {
-    offsets.push(cursor);
-    cursor += value + gap;
-  }
-
-  return offsets;
 }
 
 function sanitizeDimension(
