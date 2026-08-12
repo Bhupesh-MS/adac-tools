@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { exec } from 'child_process';
 import { runCLI } from '../src/index.js';
 import type { CostBreakdown } from '../src/index.js';
 
@@ -683,5 +684,91 @@ describe('ADAC CLI - Branch Coverage', () => {
       .map((c) => c.join(' '))
       .join('\n');
     expect(errorLogs).toContain('Error validating file: YAML parsing failed');
+  });
+
+  it.each(['elk', 'custom', 'orthogonal', 'tsm'])(
+    'should accept "%s" as a valid --layout value',
+    async (layoutValue) => {
+      const generateDiagram = vi.fn().mockResolvedValue(undefined);
+      const options = {
+        generateDiagram,
+        parseAdac: vi.fn().mockReturnValue({}),
+        validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
+        version: '1.0.0',
+      };
+
+      process.argv = [
+        'node',
+        'adac',
+        'diagram',
+        'test.yaml',
+        '--layout',
+        layoutValue,
+      ];
+      await runCLI(options);
+
+      expect(generateDiagram).toHaveBeenCalledTimes(1);
+      expect(generateDiagram.mock.calls[0][2]).toBe(layoutValue);
+      expect(mockExit).not.toHaveBeenCalled();
+    }
+  );
+
+  it('should exit with code 1 for an unsupported --layout value', async () => {
+    const generateDiagram = vi.fn().mockResolvedValue(undefined);
+    const options = {
+      generateDiagram,
+      parseAdac: vi.fn().mockReturnValue({}),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
+      version: '1.0.0',
+    };
+
+    process.argv = [
+      'node',
+      'adac',
+      'diagram',
+      'test.yaml',
+      '--layout',
+      'bogus',
+    ];
+    await runCLI(options);
+
+    expect(generateDiagram).not.toHaveBeenCalled();
+    expect(mockExit).toHaveBeenCalledWith(1);
+    const errorLogs = consoleErrorSpy.mock.calls
+      .map((c) => c.join(' '))
+      .join('\n');
+    expect(errorLogs).toContain(
+      'Unsupported layout engine "bogus". Expected elk, custom, orthogonal, or tsm.'
+    );
+  });
+
+  it('should log an error when the browser fails to launch', async () => {
+    vi.mocked(exec).mockImplementationOnce(
+      (
+        _cmd: string,
+        cb?: (error: Error | null, stdout: string, stderr: string) => void
+      ) => {
+        if (cb) cb(new Error('no browser available'), '', '');
+        return {} as ReturnType<typeof exec>;
+      }
+    );
+
+    const generateDiagram = vi.fn().mockResolvedValue(undefined);
+    const options = {
+      generateDiagram,
+      parseAdac: vi.fn().mockReturnValue({}),
+      validateAdacCostConfig: vi.fn().mockReturnValue({ valid: true }),
+      version: '1.0.0',
+    };
+
+    process.argv = ['node', 'adac', 'diagram', 'test.yaml'];
+    await runCLI(options);
+
+    const errorLogs = consoleErrorSpy.mock.calls
+      .map((c) => c.join(' '))
+      .join('\n');
+    expect(errorLogs).toContain(
+      'Failed to launch browser: no browser available'
+    );
   });
 });
