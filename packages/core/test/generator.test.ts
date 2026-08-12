@@ -527,7 +527,9 @@ connections:
   // 100+ nodes) generating a full orthogonal diagram for each — legitimately
   // more work than vitest's 15s default budgets for one test, independent of
   // any particular layout change (reproduces identically with the fixes in
-  // this file disabled). Widened rather than left flaky.
+  // this file disabled). Widened rather than left flaky. Under
+  // `vitest run --coverage` (v8 instrumentation), this takes ~70s locally
+  // and 120s+ on CI runners, so the timeout needs real headroom above that.
   it('should keep AWS orthogonal fixture edges attached and clear of blocks', async () => {
     const yamlDir = path.join(process.cwd(), '..', '..', 'yamls');
     const fixtureNames = (await fs.readdir(yamlDir)).filter((file) =>
@@ -601,7 +603,7 @@ connections:
     }
 
     expect(issues).toEqual([]);
-  }, 60000);
+  }, 180000);
 
   it('should reject unsupported layout engines', async () => {
     await expect(
