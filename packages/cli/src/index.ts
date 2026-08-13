@@ -2,20 +2,46 @@ import { Command } from 'commander';
 import path from 'path';
 import { exec } from 'child_process';
 
+/**
+ * Time period used to present estimated infrastructure cost.
+ */
 export type CostPeriod = 'hourly' | 'daily' | 'monthly' | 'yearly';
+
+/**
+ * Pricing strategy used when estimating infrastructure cost.
+ */
 export type PricingModel = 'on_demand' | 'reserved';
+
+/**
+ * Layout engine supported by the diagram generation command.
+ */
 export type DiagramLayoutEngine = 'elk' | 'custom' | 'orthogonal' | 'tsm';
 
+/**
+ * Aggregated infrastructure cost grouped by service category.
+ */
 export type CostBreakdown = {
+  /** Cost attributed to compute services. */
   compute: number;
+  /** Cost attributed to database services. */
   database: number;
+  /** Cost attributed to storage services. */
   storage: number;
+  /** Cost attributed to networking services. */
   networking: number;
+  /** Total cost across all service categories. */
   total: number;
+  /** Period represented by the cost values. */
   period: CostPeriod;
 };
 
+/**
+ * Runtime dependencies injected into the CLI command layer.
+ */
 export type CLIOptions = {
+  /**
+   * Generates a diagram from an ADAC file.
+   */
   generateDiagram: (
     input: string,
     output: string,
@@ -26,26 +52,49 @@ export type CLIOptions = {
     pricingModel?: PricingModel,
     skipOptimizer?: boolean
   ) => Promise<void>;
+  /**
+   * Calculates a categorized cost estimate from an ADAC file.
+   */
   calculateCostFromYaml?: (
     input: string,
     period?: CostPeriod,
     pricingModel?: PricingModel
   ) => CostBreakdown;
+  /**
+   * Generates Terraform files from an ADAC file.
+   */
   generateTerraformFromYaml?: (
     input: string,
     outputDir?: string,
     validate?: boolean
   ) => Promise<void>;
+  /**
+   * Parses an ADAC file or content string into a configuration object.
+   */
   parseAdac: (input: string, options?: Record<string, unknown>) => unknown;
+  /**
+   * Validates parsed ADAC configuration for cost-related schema support.
+   */
   validateAdacCostConfig: (config: unknown) => {
     valid: boolean;
     errors?: string[];
   };
+  /** CLI version string displayed by Commander. */
   version: string;
 };
 
+/**
+ * Prints a formatted cost summary with category percentages.
+ * @param cost - Categorized cost estimate to display
+ */
 function printCostBreakdown(cost: CostBreakdown) {
+  /**
+   * Formats a numeric cost value as USD.
+   */
   const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
+  /**
+   * Calculates the whole-number share of the total cost for a category.
+   */
   const pct = (value: number) =>
     cost.total > 0 ? Math.round((value / cost.total) * 100) : 0;
 
@@ -273,6 +322,11 @@ export function runCLI(options: CLIOptions) {
   program.parse(process.argv);
 }
 
+/**
+ * Validates and narrows a layout option value to a supported layout engine.
+ * @param value - Raw layout value provided by Commander
+ * @returns A supported layout engine, or undefined when no override was provided
+ */
 function normalizeLayoutEngine(
   value?: string
 ): DiagramLayoutEngine | undefined {
