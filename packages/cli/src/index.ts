@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import chalk from 'chalk';
 import path from 'path';
 import { exec } from 'child_process';
 
@@ -341,6 +342,8 @@ function normalizeLayoutEngine(
   }
 
   throw new Error(
-    `Unsupported layout engine "${value}". Expected elk, custom, orthogonal, or tsm.`
+    chalk.red(
+      `Unsupported layout engine "${value}". Expected elk, custom, orthogonal, or tsm.`
+    )
   );
 }

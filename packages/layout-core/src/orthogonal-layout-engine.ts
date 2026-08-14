@@ -46,6 +46,7 @@ const DEFAULT_MARGIN_X = 48;
 const DEFAULT_MARGIN_Y = 48;
 const DEFAULT_EDGE_MARGIN = 28;
 const GRID_UNIT = 10;
+const DEFAULT_TRACK_ATTEMPTS = 10;
 
 /**
  * Opt-in Topology-Shape-Metrics inspired orthogonal layout engine.
@@ -76,8 +77,9 @@ export class OrthogonalLayoutEngine {
   }
 
   addEdge(from: string, to: string, data?: EdgeData): void {
+    const id = String(data?.id ?? `__edge${this.edgeSequence++}`);
     this.edges.push({
-      id: String(data?.id ?? `e${this.edgeSequence++}`),
+      id,
       from,
       to,
       data,
@@ -676,27 +678,30 @@ function shortestPathByCollisions(
   boxes: Map<string, RouteBox>,
   edgeMargin: number
 ): Point[] {
-  return [...paths].sort((left, right) => {
-    const leftCollisions = countPathCollisions(
-      left,
-      source,
-      target,
-      boxes,
-      edgeMargin
-    );
-    const rightCollisions = countPathCollisions(
-      right,
-      source,
-      target,
-      boxes,
-      edgeMargin
-    );
-    if (leftCollisions !== rightCollisions) {
-      return leftCollisions - rightCollisions;
-    }
+  let best = paths[0];
+  let bestCollisions = Number.POSITIVE_INFINITY;
+  let bestLength = Number.POSITIVE_INFINITY;
 
-    return pathLength(left) - pathLength(right);
-  })[0];
+  for (const path of paths) {
+    const collisions = countPathCollisions(
+      path,
+      source,
+      target,
+      boxes,
+      edgeMargin
+    );
+    const length = pathLength(path);
+    if (
+      collisions < bestCollisions ||
+      (collisions === bestCollisions && length < bestLength)
+    ) {
+      best = path;
+      bestCollisions = collisions;
+      bestLength = length;
+    }
+  }
+
+  return best;
 }
 
 function pathLength(path: Point[]): number {
@@ -740,9 +745,13 @@ function sortTracksByPreference(values: number[], preferred: number): number[] {
   });
 }
 
-function trackOffsets(startCount: number, minimumGap: number): number[] {
+function trackOffsets(
+  startCount: number,
+  minimumGap: number,
+  attempts: number = DEFAULT_TRACK_ATTEMPTS
+): number[] {
   const offsets: number[] = [];
-  for (let index = 0; index < 10; index++) {
+  for (let index = 0; index < attempts; index++) {
     const count = startCount + index;
     if (count === 0) {
       offsets.push(0);

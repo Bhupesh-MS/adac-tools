@@ -47,7 +47,7 @@ infrastructure:
       services:
         # ---------- Static Frontend ----------
         - id: s3-static-frontend
-          name: S3 (Static Fronted)
+          name: S3 (Static Frontend)
           type: storage
           subtype: s3
 
@@ -157,6 +157,7 @@ infrastructure:
             - edge-layer
             - alb
             - secrets-manager
+            - cloudwatch
             - vpc-main
 
 connections:
@@ -175,7 +176,7 @@ connections:
     to: waf
     type: security
 
-  - id: cloudwatch-to-vpc
+  - id: vpc-to-cloudwatch
     from: vpc-main
     to: cloudwatch
     type: monitoring

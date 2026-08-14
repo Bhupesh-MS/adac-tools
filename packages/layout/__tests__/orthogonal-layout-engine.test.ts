@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OrthogonalLayoutEngine } from '../../layout-core/src/orthogonal-layout-engine';
+import { OrthogonalLayoutEngine } from '../src/orthogonal-layout-engine';
 
 function expectManhattan(points: Array<{ x: number; y: number }>) {
   expect(points.length).toBeGreaterThanOrEqual(2);

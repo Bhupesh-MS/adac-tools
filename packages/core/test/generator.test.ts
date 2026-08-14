@@ -384,6 +384,40 @@ connections:
     expect(result.svg).not.toMatch(/<path d="[^"]* A /);
   });
 
+  it('should generate SVG with TSM layout engine', async () => {
+    const tsmYaml = `
+version: "0.1"
+metadata:
+  name: "TSM Arch"
+  created: "2023-11-01"
+layout: tsm
+infrastructure:
+  clouds:
+    - id: "aws-1"
+      provider: "aws"
+      region: "us-east-1"
+      services:
+        - id: "api"
+          service: "lambda"
+          name: "API"
+        - id: "queue"
+          service: "sqs"
+          name: "Queue"
+connections:
+  - id: "api-to-queue"
+    from: "api"
+    to: "queue"
+    type: "message-publish"
+`;
+
+    const result = await generateDiagramSvg(tsmYaml, undefined, true);
+
+    expect(result.svg).toContain('<svg');
+    expect(result.svg).toContain('API');
+    expect(result.svg).toContain('Queue');
+    expect(result.svg).toContain('data-layout="tsm"');
+  });
+
   it('should keep orthogonal route tracks clear of endpoint boxes', async () => {
     const fixturePath = path.join(
       process.cwd(),

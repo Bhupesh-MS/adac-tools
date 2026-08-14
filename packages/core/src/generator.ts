@@ -86,7 +86,7 @@ export async function generateDiagramSvg(
 
     const graph = await buildElkGraph(adac);
     const engine = normalizeLayoutEngine(
-      layoutOverride || adac.layout || 'custom'
+      layoutOverride ?? adac.layout ?? 'custom'
     );
 
     let complianceTooltipMap: ComplianceTooltipMap | undefined;

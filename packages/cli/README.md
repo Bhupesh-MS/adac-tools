@@ -58,7 +58,7 @@ Generate an SVG diagram from an ADAC YAML file. The architecture optimizer runs 
 
 | Flag                  | Default       | Description                                 |
 | --------------------- | ------------- | ------------------------------------------- |
-| `-l, --layout <type>` | `elk`         | `elk` or `custom`                           |
+| `-l, --layout <type>` | `custom`      | `elk`, `custom`, `orthogonal`, or `tsm`     |
 | `-o, --output <path>` | `<input>.svg` | Output path                                 |
 | `--validate`          | —             | Schema validation before generation         |
 | `--cost`              | —             | Print cost breakdown                        |

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createLayoutEngine } from '../src/factory';
 import * as autoSelector from '../src/auto-selector';
 import { CustomLayoutEngineAdapter } from '../src/custom-layout-engine-adapter';
+import { OrthogonalLayoutEngine } from '../src/orthogonal-layout-engine';
 
 // Mock engines
 vi.mock('@mindfiredigital/adac-layout-core', () => ({
@@ -47,8 +48,10 @@ describe('createLayoutEngine', () => {
   });
 
   it('returns OrthogonalLayoutEngine when type is orthogonal', async () => {
-    const engine = await createLayoutEngine('orthogonal');
+    const options = { nodesep: 100, ranksep: 100 };
+    const engine = await createLayoutEngine('orthogonal', options);
     expect(engine).toEqual({ type: 'orthogonal' });
+    expect(OrthogonalLayoutEngine).toHaveBeenCalledWith(options);
   });
 
   it('returns OrthogonalLayoutEngine when type is tsm', async () => {

@@ -2,6 +2,7 @@
   "name": "adac-monorepo",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.21.0",
   "description": "ADAC - AWS Diagram Generator Monorepo",
   "type": "module",
   "workspaces": [
